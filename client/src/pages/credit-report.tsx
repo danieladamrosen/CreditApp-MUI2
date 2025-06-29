@@ -1,56 +1,37 @@
-import { useState, useEffect } from "react";
-import { 
-  Button, 
-  Card,
-  CardContent, 
-  Typography, 
-  Box, 
-  Container, 
-  CircularProgress 
-} from '@mui/material';
-import { 
-  Sparkles, 
-  Zap, 
-  Brain, 
-  Shield, 
-  CheckCircle, 
-  Circle as CheckCircleOutline,
-  ThumbsUp, 
-  TrendingUp, 
-  ArrowUp, 
-  Trophy, 
-  Star, 
-  Target, 
-  Activity, 
-  PieChart, 
-  Gauge, 
-  Play, 
-  X, 
-  RotateCcw,
-  ChevronDown
+import { useState, useEffect, useRef } from 'react';
+import { Card, CardContent, CardHeader } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import {
+  ChevronDown,
+  ChevronUp,
+  Brain,
+  Zap,
+  CheckCircle,
+  AlertTriangle,
+  TrendingUp,
+  ArrowUp,
+  Info,
 } from 'lucide-react';
 
-// UI Components
-import { Confetti } from "@/components/ui/confetti";
-
 // Credit Report Components
-import { CreditReportHeader } from "@/components/credit-report/header";
-import { ModernAccountRow } from "@/components/credit-report/modern-account-row";
-import { ModernInquiries } from "@/components/credit-report/modern-inquiries";
-import { ModernPersonalInfo } from "@/components/credit-report/modern-personal-info";
-import { CreditSummary } from "@/components/credit-report/credit-summary";
-import { CompletionCenter } from "@/components/credit-report/completion-center";
-import { DisputeModal } from "@/components/credit-report/dispute-modal";
+import { CreditReportHeader } from '@/components/credit-report/header';
+import { AccountRow } from '@/components/credit-report/account-row';
+import { PublicRecordRow } from '@/components/credit-report/public-record-row';
+import { Inquiries } from '@/components/credit-report/inquiries-working';
+import { PersonalInfo } from '@/components/credit-report/personal-info';
+import { CreditSummary } from '@/components/credit-report/credit-summary';
+import { CompletionCenter } from '@/components/credit-report/completion-center';
+import { DisputeModal } from '@/components/credit-report/dispute-modal';
+import { RippleLoader } from '@/components/ui/ripple-loader';
 
 // Utilities and Data
-import { parseCreditReport, formatCurrency, formatDate } from "@/lib/credit-data";
+import { parseCreditReport } from '@/lib/credit-data';
 
-// Assets
-import transUnionLogo from "@assets/TransUnion.logo.png";
-import equifaxLogo from "@assets/Equifax_Logo.png";
-import experianLogo from "@assets/Experian_logo.png";
-import scoreGaugeArc from "@assets/Score Gauge Arc.png";
-import cloudyMascot from "../assets/cloudy-mascot.png";
+// Import bureau logos and score gauge
+import transUnionLogo from '../assets/transunion-logo.png';
+import equifaxLogo from '../assets/equifax-logo.png';
+import experianLogo from '../assets/experian-logo.png';
+import scoreGaugeArc from '../assets/score-gauge-arc.png';
 
 export default function CreditReportPage() {
   // Core data state
@@ -60,280 +41,177 @@ export default function CreditReportPage() {
   // Dispute management state
   const [isDisputeModalOpen, setIsDisputeModalOpen] = useState(false);
   const [selectedAccount, setSelectedAccount] = useState<any>(null);
-  const [savedDisputes, setSavedDisputes] = useState<{[accountId: string]: boolean}>({});
-  const [personalInfoDisputeSelections, setPersonalInfoDisputeSelections] = useState<{[key: string]: boolean}>({});
+  const [savedDisputes, setSavedDisputes] = useState<{
+    [accountId: string]: boolean | { reason: string; instruction: string; violations?: string[] };
+  }>({});
 
   // AI scanning state
   const [isAiScanning, setIsAiScanning] = useState(false);
-  const [aiViolations, setAiViolations] = useState<{[accountId: string]: string[]}>({});
+  const [aiViolations, setAiViolations] = useState<{ [accountId: string]: string[] }>({});
   const [aiScanCompleted, setAiScanCompleted] = useState(false);
+  const [aiScanDismissed, setAiScanDismissed] = useState(false);
   const [showAiSummary, setShowAiSummary] = useState(false);
-  const [aiSummaryData, setAiSummaryData] = useState<{totalViolations: number, affectedAccounts: number}>({
-    totalViolations: 0, 
-    affectedAccounts: 0
+  const [aiSummaryData, setAiSummaryData] = useState<{
+    totalViolations: number;
+    affectedAccounts: number;
+  }>({
+    totalViolations: 0,
+    affectedAccounts: 0,
   });
 
-  // UI state
-  const [showInstructionalVideo, setShowInstructionalVideo] = useState(false);
-  const [showPositivesFirst, setShowPositivesFirst] = useState(true);
-  const [showPositiveAndClosedAccounts, setShowPositiveAndClosedAccounts] = useState(false);
-  const [expandAllAccounts, setExpandAllAccounts] = useState(false);
+  // Hard Inquiries auto-collapse state
+  type SavedInquiry = { bureau: 'TU' | 'EQ' | 'EX'; isRecent: boolean };
+  const [savedInquiries, setSavedInquiries] = useState<Record<string, SavedInquiry>>({});
+  const [hardCollapsed, setHardCollapsed] = useState(false);
 
-  // Gamification state
-  const [confettiTrigger, setConfettiTrigger] = useState(0);
+  // UI state management
+  const [showPositiveAccounts, setShowPositiveAccounts] = useState(false);
+  const [showNegativeAccounts, setShowNegativeAccounts] = useState(false);
+  const [showPublicRecords, setShowPublicRecords] = useState(false);
+  const [showHardInquiries, setShowHardInquiries] = useState(false);
+  const [showCreditSummary, setShowCreditSummary] = useState(false);
+  const [expandAll, setExpandAll] = useState(false);
+  const [showAllDetails, setShowAllDetails] = useState(false);
+  const [negativeAccountsCollapsed, setNegativeAccountsCollapsed] = useState(false);
+  const [userHasManuallyExpanded, setUserHasManuallyExpanded] = useState(false);
 
-  const disputeReasons = [
-    "Select reason for dispute",
-    "Not my account",
-    "Incorrect balance",
-    "Incorrect payment history", 
-    "Account paid in full",
-    "Incorrect personal information",
-    "Fraudulent account",
-    "Disputed - resolved",
-    "Obsolete information",
-    "Inaccurate account status"
-  ];
+  // Refs for scroll behavior
+  const negativeAccountsRef = useRef<HTMLDivElement>(null);
+  const hardInquiriesRef = useRef<HTMLDivElement>(null);
 
-  // Helper functions for video management
-  const handleDismissVideo = () => {
-    setShowInstructionalVideo(false);
-    localStorage.setItem('instructionalVideoDismissed', 'true');
-  };
-
-  const handleRestoreVideo = () => {
-    setShowInstructionalVideo(true);
-    localStorage.setItem('instructionalVideoDismissed', 'false');
-  };
-
-  const disputeInstructions = [
-    "Select instructions for creditor",
-    "Please update my account information to reflect accurate details",
-    "Please remove this account as it does not belong to me",
-    "Please correct the balance to reflect the accurate amount owed",
-    "Please update payment history to show correct payment dates",
-    "Please mark this account as paid in full - account was satisfied",
-    "Please remove this fraudulent account immediately",
-    "Please update account status to reflect current accurate status",
-    "Please remove this outdated information per FCRA guidelines",
-    "Please verify account details and update accordingly",
-    "Please contact me to resolve this disputed information"
-  ];
-
+  // Load credit data
   useEffect(() => {
     const loadData = async () => {
       try {
-        // Add a small delay to show the loading spinner
-        await new Promise(resolve => setTimeout(resolve, 500));
-        
-        const data = parseCreditReport();
-        setCreditData(data);
-        
-        // Check for credit score improvements to trigger confetti
-        if (data?.CREDIT_RESPONSE?.CREDIT_SCORE) {
-          const currentScores = data.CREDIT_RESPONSE.CREDIT_SCORE;
-          const lastScoresJson = localStorage.getItem('lastCreditScores');
-          
-          if (lastScoresJson) {
-            try {
-              const lastScores = JSON.parse(lastScoresJson);
-              let hasImprovement = false;
-              
-              // Compare each bureau's score
-              for (const bureau of ['transUnion', 'equifax', 'experian']) {
-                const currentScore = (currentScores as any)[bureau]?.score;
-                const lastScore = (lastScores as any)[bureau]?.score;
-                
-                if (currentScore && lastScore && currentScore > lastScore) {
-                  hasImprovement = true;
-                  break;
-                }
-              }
-              
-              // Trigger confetti if any score improved
-              if (hasImprovement) {
-                setTimeout(() => {
-                  setConfettiTrigger(prev => prev + 1);
-                }, 1000);
-              }
-            } catch (error) {
-              console.error('Error parsing last scores:', error);
-            }
-          }
-          
-          // Save current scores for future comparison
-          localStorage.setItem('lastCreditScores', JSON.stringify(currentScores));
-        }
+        const response = await fetch('/data/donald-blair-credit-report.json');
+        const rawData = await response.json();
+        const parsedData = parseCreditReport(rawData);
+        setCreditData(parsedData);
+      } catch (error) {
+        console.error('Error loading credit data:', error);
       } finally {
         setIsLoading(false);
       }
     };
-    
+
     loadData();
   }, []);
 
-  if (isLoading || !creditData) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-purple-50 flex items-center justify-center">
-        <div className="text-center">
-          <div className="relative">
-            {/* Main spinner */}
-            <div className="w-16 h-16 mx-auto relative">
-              <div className="w-16 h-16 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin"></div>
-              {/* Cloudy in center */}
-              <div className="absolute inset-0 flex items-center justify-center">
-                <img 
-                  src={cloudyMascot} 
-                  alt="Cloudy" 
-                  className="w-8 h-8 object-contain"
-                />
-              </div>
-            </div>
-            {/* Pulse effect */}
-            <div className="absolute inset-0 w-16 h-16 mx-auto border-4 border-purple-200 rounded-full animate-pulse opacity-40"></div>
-          </div>
-        </div>
-      </div>
-    );
-  }
+  // Detect when all negative accounts are saved and auto-collapse
+  useEffect(() => {
+    if (!creditData || negativeAccountsCollapsed) {
+      return;
+    }
 
-  const handleDisputeAccount = (account: any) => {
+    const accounts = creditData.CREDIT_RESPONSE?.CREDIT_LIABILITY || [];
+    const negativeAccounts = accounts.filter((account: any) => {
+      return (
+        account['@_DerogatoryDataIndicator'] === 'Y' ||
+        account['@IsCollectionIndicator'] === 'Y' ||
+        account['@IsChargeoffIndicator'] === 'Y' ||
+        (account['@_PastDueAmount'] && parseInt(account['@_PastDueAmount']) > 0) ||
+        (account._CURRENT_RATING && ['7', '8', '9'].includes(account._CURRENT_RATING['@_Code'])) ||
+        (account['@_ChargeOffDate'] && account['@_ChargeOffDate'] !== '')
+      );
+    });
+
+    if (negativeAccounts.length === 0) {
+      return;
+    }
+
+    const allNegativeAccountsSaved = negativeAccounts.every((account: any) => {
+      const accountId =
+        account['@CreditLiabilityID'] ||
+        account['@_AccountNumber'] ||
+        account['@_AccountIdentifier'];
+      return savedDisputes[accountId];
+    });
+
+    if (allNegativeAccountsSaved && !negativeAccountsCollapsed && !userHasManuallyExpanded) {
+      // First: Scroll to Negative Accounts section BEFORE collapse
+      if (negativeAccountsRef.current) {
+        negativeAccountsRef.current.scrollIntoView({
+          behavior: 'smooth',
+          block: 'start',
+        });
+        // Offset by 20px after a brief delay to ensure scrollIntoView completes
+        setTimeout(() => {
+          window.scrollBy(0, -20);
+        }, 100);
+      }
+
+      // Then: Collapse after scroll completes (~400ms delay)
+      setTimeout(() => {
+        setNegativeAccountsCollapsed(true);
+      }, 400);
+    }
+  }, [savedDisputes, creditData, negativeAccountsCollapsed]);
+
+  // Hard Inquiries auto-collapse effect
+  useEffect(() => {
+    const anyRecent = Object.values(savedInquiries).some((x) => x.isRecent);
+    if (!hardCollapsed && anyRecent) {
+      setTimeout(() => {
+        hardInquiriesRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        window.scrollBy(0, -20);
+        setHardCollapsed(true);
+        console.log('🔔 HARD INQUIRIES COLLAPSED');
+      }, 500);
+    }
+  }, [savedInquiries, hardCollapsed]);
+
+  // Event handlers
+  const handleAccountDispute = (account: any) => {
     setSelectedAccount(account);
     setIsDisputeModalOpen(true);
   };
 
-  const handleCreateDispute = () => {
-    setIsDisputeModalOpen(true);
-  };
-
-  const handleContinueToWizard = () => {
-    // Navigate to wizard or perform save action
-    console.log("Continuing to wizard...");
-  };
-
-  const handleShowDisputeItems = () => {
-    // Show dispute items or navigate to dispute items view
-    console.log("Showing dispute items...");
-  };
-
-  const handlePersonalInfoDisputeToggle = (infoKey: string, checked: boolean) => {
-    setPersonalInfoDisputeSelections(prev => ({
+  const handleDisputeSaved = (
+    accountId: string,
+    disputeData?: { reason: string; instruction: string; violations?: string[] }
+  ) => {
+    setSavedDisputes((prev) => ({
       ...prev,
-      [infoKey]: checked
+      [accountId]: disputeData || true,
     }));
   };
 
-  const getAllAccounts = () => {
-    const creditLiabilities = creditData?.CREDIT_RESPONSE?.CREDIT_LIABILITY;
-    if (!creditLiabilities || !Array.isArray(creditLiabilities)) return [];
-    return creditLiabilities;
+  const handleDisputeReset = (accountId: string) => {
+    setSavedDisputes((prev) => {
+      const newDisputes = { ...prev };
+      delete newDisputes[accountId];
+      return newDisputes;
+    });
   };
 
-  const accounts = getAllAccounts();
-  const filteredUniqueAccounts = accounts.filter((account: any, index: number, self: any[]) => {
-    const accountNumber = account["@_AccountIdentifier"] || account["@CreditLiabilityID"];
-    const creditorName = account.CREDIT_BUSINESS?.["@_Name"] || "";
-    
-    return index === self.findIndex((a: any) => 
-      (a["@_AccountIdentifier"] || a["@CreditLiabilityID"]) === accountNumber &&
-      (a.CREDIT_BUSINESS?.["@_Name"] || "") === creditorName
-    );
-  });
-
-  // Function to check if there are public records
-  const hasPublicRecords = () => {
-    const publicRecords = creditData?.CREDIT_RESPONSE?.PUBLIC_RECORD;
-    return publicRecords && Array.isArray(publicRecords) && publicRecords.length > 0;
+  const handleContinueToWizard = () => {
+    console.log('Continuing to wizard...');
   };
 
-  // Function to determine if an account is negative
-  const isNegativeAccount = (account: any) => {
-    // 1. Explicit derogatory data indicator
-    if (account["@_DerogatoryDataIndicator"] === "Y") {
-      return true;
-    }
-    
-    // 2. Collection accounts
-    if (account["@IsCollectionIndicator"] === "Y") {
-      return true;
-    }
-    
-    // 3. Charge-off accounts
-    if (account["@IsChargeoffIndicator"] === "Y") {
-      return true;
-    }
-    
-    // 4. Check for past due amounts (indicates late payments)
-    const pastDue = parseInt(account["@_PastDueAmount"] || "0");
-    if (pastDue > 0) {
-      return true;
-    }
-    
-    // 5. Check current rating code for late payments (2-9 indicate late payments)
-    const currentRating = account._CURRENT_RATING?.["@_Code"];
-    if (currentRating && ["2", "3", "4", "5", "6", "7", "8", "9"].includes(currentRating)) {
-      return true;
-    }
-    
-    // 6. Check for charge-off date
-    if (account["@_ChargeOffDate"]) {
-      return true;
-    }
-    
-    return false;
+  const handleShowDisputeItems = () => {
+    console.log('Showing dispute items...');
   };
 
-  // Function to determine if an account is closed
-  const isClosedAccount = (account: any) => {
-    // Check for closed account status
-    const accountStatus = account["@_AccountStatusType"];
-    if (accountStatus && (
-      accountStatus.toLowerCase().includes("closed") ||
-      accountStatus.toLowerCase().includes("paid") ||
-      accountStatus === "C"
-    )) return true;
-    
-    // Check for closed date
-    if (account["@_AccountClosedDate"]) return true;
-    
-    // Check current rating for closed accounts
-    const currentRating = account._CURRENT_RATING?.["@_Code"];
-    if (currentRating && currentRating === "C") return true;
-    
-    return false;
+  // Hard Inquiries callback handlers
+  const handleInquirySaved = (id: string, bureau: 'TU' | 'EQ' | 'EX', isRecent: boolean) => {
+    console.log(`✅ SAVE-HANDLER (${isRecent ? 'recent' : 'older'}): ${id}`);
+    setSavedInquiries((prev) => ({ ...prev, [id]: { bureau, isRecent } }));
   };
 
-  // Sort accounts based on toggle state - simplified since we handle grouping in render
-  const uniqueAccounts = showPositivesFirst 
-    ? [...filteredUniqueAccounts].sort((a, b) => {
-        const aIsNegative = isNegativeAccount(a);
-        const bIsNegative = isNegativeAccount(b);
-        const aIsClosed = isClosedAccount(a) && !aIsNegative;
-        const bIsClosed = isClosedAccount(b) && !bIsNegative;
-        
-        // Priority order: Positive (open) > Closed (non-negative) > Negative
-        
-        // If one is negative and the other is not, non-negative comes first
-        if (aIsNegative && !bIsNegative) return 1;
-        if (!aIsNegative && bIsNegative) return -1;
-        
-        // Among non-negative accounts, positive (open) comes before closed
-        if (!aIsNegative && !bIsNegative) {
-          if (aIsClosed && !bIsClosed) return 1; // Open before closed
-          if (!aIsClosed && bIsClosed) return -1; // Open before closed
-        }
-        
-        // If both are the same type, maintain original order
-        return 0;
-      })
-    : filteredUniqueAccounts; // Use original report order when toggle is off
+  const handleInquiryReset = (id: string) => {
+    console.log(`🧹 RESET-HANDLER: ${id}`);
+    setSavedInquiries((prev) => {
+      const { [id]: _, ...rest } = prev;
+      return rest;
+    });
+  };
 
   const handleAiScan = async () => {
     setIsAiScanning(true);
-    
+
     // Add 5 second delay to make it feel like AI is thinking
-    await new Promise(resolve => setTimeout(resolve, 5000));
-    
+    await new Promise((resolve) => setTimeout(resolve, 5000));
+
     try {
       // Call the real AI scan API with credit data
       const response = await fetch('/api/ai-scan', {
@@ -346,18 +224,18 @@ export default function CreditReportPage() {
 
       if (response.ok) {
         const violations = await response.json();
-        
+
         // Count total violations and affected accounts
         let totalViolations = 0;
         let affectedAccounts = 0;
-        
-        Object.keys(violations).forEach(accountId => {
+
+        Object.keys(violations).forEach((accountId) => {
           if (violations[accountId] && violations[accountId].length > 0) {
             totalViolations += violations[accountId].length;
             affectedAccounts++;
           }
         });
-        
+
         setAiViolations(violations);
         setAiSummaryData({ totalViolations, affectedAccounts });
         setAiScanCompleted(true);
@@ -376,1350 +254,808 @@ export default function CreditReportPage() {
       setAiSummaryData({ totalViolations: 0, affectedAccounts: 0 });
       setShowAiSummary(true);
     }
-    
+
     setIsAiScanning(false);
   };
 
-  const handleViewAiDetails = () => {
-    const personalInfoSection = document.querySelector('[data-section="personal-info"]');
-    if (personalInfoSection) {
-      personalInfoSection.scrollIntoView({ 
-        behavior: 'smooth',
-        block: 'start'
-      });
-      setTimeout(() => {
-        window.scrollBy(0, -80);
-      }, 500);
-    }
-  };
+  // Loading state
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center">
+        <RippleLoader />
+      </div>
+    );
+  }
 
-  // Function to handle when an account dispute is saved
-  const handleAccountDisputeSaved = (accountId: string) => {
-    setSavedDisputes(prev => ({
-      ...prev,
-      [accountId]: true
-    }));
-  };
-
-  // Check if all negative accounts have been saved
-  const areAllNegativeAccountsSaved = () => {
-    if (!creditData) return false;
-    
-    const accounts = creditData.CREDIT_RESPONSE?.CREDIT_LIABILITY || [];
-    const negativeAccounts = accounts.filter((account: any, index: number) => {
-      // Use the same logic as ModernAccountRow component for detecting negative accounts
-      const accountId = account["@CreditLiabilityID"] || account["@_AccountNumber"] || account["@_SubscriberCode"] || index.toString();
-      
-      // 1. Explicit derogatory data indicator
-      if (account["@_DerogatoryDataIndicator"] === "Y") {
-        console.log(`Account ${accountId} is negative: DerogatoryDataIndicator = Y`);
-        return true;
-      }
-      
-      // 2. Collection accounts
-      if (account["@IsCollectionIndicator"] === "Y") {
-        console.log(`Account ${accountId} is negative: CollectionIndicator = Y`);
-        return true;
-      }
-      
-      // 3. Charge-off accounts
-      if (account["@IsChargeoffIndicator"] === "Y") {
-        console.log(`Account ${accountId} is negative: ChargeoffIndicator = Y`);
-        return true;
-      }
-      
-      // 4. Check for past due amounts (indicates late payments)
-      const pastDue = parseInt(account["@_PastDueAmount"] || "0");
-      if (pastDue > 0) {
-        console.log(`Account ${accountId} is negative: PastDue = ${pastDue}`);
-        return true;
-      }
-      
-      // 5. Check current rating code for late payments (2-9 indicate late payments)
-      const currentRating = account._CURRENT_RATING?.["@_Code"];
-      if (currentRating && ["2", "3", "4", "5", "6", "7", "8", "9"].includes(currentRating)) {
-        console.log(`Account ${accountId} is negative: CurrentRating = ${currentRating}`);
-        return true;
-      }
-      
-      // 6. Check for charge-off date
-      if (account["@_ChargeOffDate"]) {
-        console.log(`Account ${accountId} is negative: ChargeOffDate exists`);
-        return true;
-      }
-      
-      return false;
-    });
-    
-    console.log("Total accounts:", accounts.length);
-    console.log("Negative accounts found:", negativeAccounts.length);
-    console.log("Saved disputes:", savedDisputes);
-    
-    if (negativeAccounts.length === 0) return false;
-    
-    const allSaved = negativeAccounts.every((account: any, index: number) => {
-      const accountId = account["@CreditLiabilityID"] || account["@_AccountNumber"] || account["@_SubscriberCode"] || index.toString();
-      const isSaved = savedDisputes[accountId];
-      console.log(`Account ${accountId} saved:`, isSaved);
-      return isSaved;
-    });
-    
-    console.log("All negative accounts saved:", allSaved);
-    
-    // Temporary override: if most accounts are saved, consider it complete
-    const savedCount = Object.keys(savedDisputes).length;
-    if (savedCount >= 13) {
-      console.log("Override: 13+ accounts saved, marking as complete");
+  // Function to determine if an account is closed
+  const isClosedAccount = (account: any) => {
+    // Check for closed account status
+    const accountStatus = account['@_AccountStatusType'];
+    if (
+      accountStatus &&
+      (accountStatus.toLowerCase().includes('closed') ||
+        accountStatus.toLowerCase().includes('paid') ||
+        accountStatus === 'C')
+    )
       return true;
-    }
-    
-    return allSaved;
+
+    // Check for closed date
+    if (account['@_AccountClosedDate']) return true;
+
+    // Check current rating for closed accounts
+    const currentRating = account._CURRENT_RATING?.['@_Code'];
+    if (currentRating && currentRating === 'C') return true;
+
+    return false;
   };
 
-  const scrollToNextNegativeAccount = () => {
-    // First check if there are public records and scroll to that section
-    if (hasPublicRecords()) {
-      const publicRecordsSection = document.querySelector('[data-section="public-records"]');
-      if (publicRecordsSection) {
-        console.log("Scrolling to public records section...");
-        publicRecordsSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        
-        // Add a brief highlight effect to the pink Card that contains the numbered circles
-        console.log("Looking for highlight target...");
-        const allCards = document.querySelectorAll('[data-highlight-target]');
-        console.log("All cards with data-highlight-target:", allCards);
-        const firstNegativeCard = document.querySelector('[data-highlight-target="true"]');
-        console.log("First negative card found:", firstNegativeCard);
-        if (firstNegativeCard) {
-          console.log("Adding highlight to:", firstNegativeCard);
-          firstNegativeCard.classList.add('ring-4', 'ring-red-400', 'ring-opacity-75');
-          setTimeout(() => {
-            firstNegativeCard.classList.remove('ring-4', 'ring-red-400', 'ring-opacity-75');
-          }, 300);
-        } else {
-          console.log("No highlight target found, trying fallback selector");
-          const fallbackCard = document.querySelector('.bg-red-50');
-          console.log("Fallback card:", fallbackCard);
-          if (fallbackCard) {
-            fallbackCard.classList.add('ring-4', 'ring-red-400', 'ring-opacity-75');
-            setTimeout(() => {
-              fallbackCard.classList.remove('ring-4', 'ring-red-400', 'ring-opacity-75');
-            }, 300);
-          }
-        }
-        return;
-      }
-    }
-    
-    // Look for the negative accounts section by finding the heading
-    const negativeAccountsSection = Array.from(document.querySelectorAll('.mb-6')).find(el => {
-      const heading = el.querySelector('h3');
-      return heading && heading.textContent && heading.textContent.toLowerCase().includes('negative account');
+  // Get data arrays
+  const accounts = creditData?.CREDIT_RESPONSE?.CREDIT_LIABILITY || [];
+  const positiveAccounts = accounts
+    .filter((account: any) => account['@_DerogatoryDataIndicator'] !== 'Y')
+    .sort((a: any, b: any) => {
+      const aIsClosed = isClosedAccount(a);
+      const bIsClosed = isClosedAccount(b);
+      
+      // Open accounts first, closed accounts last
+      if (aIsClosed && !bIsClosed) return 1;
+      if (!aIsClosed && bIsClosed) return -1;
+      return 0;
     });
-    
-    if (negativeAccountsSection) {
-      console.log("Scrolling to negative accounts section header...");
-      // Calculate position to scroll to 3/4 inch (about 54px) above the pink section
-      const rect = negativeAccountsSection.getBoundingClientRect();
-      const offsetTop = window.pageYOffset + rect.top - 54; // 54px ≈ 3/4 inch
-      
-      window.scrollTo({
-        top: offsetTop,
-        behavior: 'smooth'
-      });
-      
-      // Add highlight effect to the first pink Card that contains the numbered circles
-      setTimeout(() => {
-        const firstNegativeCard = document.querySelector('[data-highlight-target="true"]');
-        console.log("Looking for first negative card:", firstNegativeCard);
-        if (firstNegativeCard) {
-          console.log("Adding highlight to:", firstNegativeCard);
-          firstNegativeCard.classList.add('ring-4', 'ring-red-400', 'ring-opacity-75');
-          setTimeout(() => {
-            firstNegativeCard.classList.remove('ring-4', 'ring-red-400', 'ring-opacity-75');
-          }, 300);
-        } else {
-          console.log("Trying fallback selector...");
-          const fallbackCard = document.querySelector('.bg-red-50');
-          if (fallbackCard) {
-            fallbackCard.classList.add('ring-4', 'ring-red-400', 'ring-opacity-75');
-            setTimeout(() => {
-              fallbackCard.classList.remove('ring-4', 'ring-red-400', 'ring-opacity-75');
-            }, 300);
-          }
-        }
-      }, 100); // Faster response time
-      return;
-    }
-    
-    // Fallback: if section header not found, alert user
-    alert("Negative accounts section not found. Make sure you've run the AI scan first.");
+  const negativeAccounts = accounts.filter(
+    (account: any) => account['@_DerogatoryDataIndicator'] === 'Y'
+  );
+
+  // Create enhanced public records from credit data
+  const publicRecordsFromCredit = accounts
+    .filter(
+      (account: any) =>
+        account['@_AccountType'] &&
+        ['13', '14', '15', '16', '93', '94', '95'].includes(account['@_AccountType'])
+    )
+    .map((account: any) => ({
+      ...account,
+      '@publicRecordType':
+        account['@_AccountType'] === '93'
+          ? 'BANKRUPTCY'
+          : account['@_AccountType'] === '94'
+            ? 'TAX LIEN'
+            : account['@_AccountType'] === '95'
+              ? 'JUDGMENT'
+              : 'PUBLIC RECORD',
+      '@courtName': account['@_SubscriberName'] || 'Court Name Not Available',
+      '@courtAddress': 'Court Address Not Available',
+      caseNumber: account['@_AccountNumber'] || 'Case Number Not Available',
+      filingDate: account['@_AccountOpenedDate'] || 'Filing Date Not Available',
+      status: account['@_AccountStatusType'] || 'Status Not Available',
+    }));
+
+  // Get public records from the existing structure if available
+  const existingPublicRecords = creditData?.CREDIT_RESPONSE?.CREDIT_PUBLIC_RECORD || [];
+
+  // Combine both sources, giving priority to existing public records
+  const allPublicRecords = [...existingPublicRecords, ...publicRecordsFromCredit];
+
+  // Show all public records (they are typically negative by nature)
+  const publicRecords = allPublicRecords.length > 0 ? allPublicRecords : publicRecordsFromCredit;
+
+  const hasPublicRecords = publicRecords && publicRecords.length > 0;
+
+  // Calculate recent inquiries count (inquiries within 24 months)
+  const calculateRecentInquiriesCount = () => {
+    const inquiries = creditData?.CREDIT_RESPONSE?.CREDIT_INQUIRY || [];
+    const inquiriesArray = Array.isArray(inquiries) ? inquiries : [inquiries];
+
+    const currentDate = new Date('2025-06-18'); // Use consistent report date
+    const cutoffDate = new Date(currentDate);
+    cutoffDate.setMonth(cutoffDate.getMonth() - 24); // 24 months ago
+
+    return inquiriesArray.filter((inquiry: any) => {
+      const inquiryDate = new Date(inquiry['@_Date']);
+      return inquiryDate >= cutoffDate;
+    }).length;
   };
+
+  const recentInquiriesCount = calculateRecentInquiriesCount();
+
+  // Calculate total inquiries count
+  const getTotalInquiriesCount = () => {
+    const inquiries = creditData?.CREDIT_RESPONSE?.CREDIT_INQUIRY || [];
+    const inquiriesArray = Array.isArray(inquiries) ? inquiries : [inquiries];
+    return inquiriesArray.length;
+  };
+
+  const totalInquiriesCount = getTotalInquiriesCount();
+
+  // Calculate counts
+  const disputeReasons = [
+    'This account does not belong to me',
+    'Account information is inaccurate',
+    'Payment history is incorrect',
+    'Account should be closed/paid',
+    'Duplicate account reporting',
+    'Identity theft/fraud account',
+    'Settled account still showing balance',
+    'Account beyond statute of limitations',
+    'Incorrect dates (opened/closed/last activity)',
+    'Unauthorized charges on this account',
+  ];
+
+  const disputeInstructions = [
+    'Please remove this inaccurate information immediately',
+    'Verify and correct all account details',
+    'Update payment history to reflect accurate information',
+    'Remove this account as it has been paid in full',
+    'Delete this duplicate entry from my credit report',
+    'Remove this fraudulent account immediately',
+    'Update account to show zero balance',
+    'Remove this time-barred account',
+    'Correct all dates associated with this account',
+    'Remove all unauthorized charges and related negative marks',
+  ];
 
   return (
-    <Box sx={{ minHeight: '100vh', backgroundColor: '#f5f5f5' }}>
-      <CreditReportHeader 
-        onShowTutorial={() => setShowInstructionalVideo(true)}
-        showInstructionalVideo={showInstructionalVideo}
-      />
-      
-      {/* Confetti Animation */}
-      <Confetti 
-        trigger={confettiTrigger} 
-        colors={['#10B981', '#3B82F6', '#F59E0B', '#EF4444', '#8B5CF6', '#F97316']}
-        particleCount={60}
-      />
-      
-      <Container maxWidth="xl" sx={{ py: 4 }}>
-
-        {/* Instructional Video Section - Desktop Only */}
-        {showInstructionalVideo && (
-          <Box sx={{ display: { xs: 'none', md: 'block' }, mb: 4 }}>
-            <Card sx={{ 
-              background: 'linear-gradient(to right, #eff6ff, #eef2ff)', 
-              border: '2px solid #bfdbfe',
-              boxShadow: 3 
-            }}>
-              <CardContent sx={{ p: 3 }}>
-                <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', mb: 2 }}>
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                    <Box sx={{ 
-                      width: 48, 
-                      height: 48, 
-                      backgroundColor: 'primary.main', 
-                      borderRadius: '50%', 
-                      display: 'flex', 
-                      alignItems: 'center', 
-                      justifyContent: 'center' 
-                    }}>
-                      <Play size={24} color="white" />
-                    </Box>
-                    <Box>
-                      <Typography variant="h6" fontWeight="bold" color="text.primary">
-                        How to Use This Credit Repair Tool
-                      </Typography>
-                      <Typography variant="body2" color="text.secondary">
-                        Learn the step-by-step process in just 3 minutes
-                      </Typography>
-                    </Box>
-                  </Box>
-                  <Button
-                    variant="text"
-                    size="small"
-                    onClick={handleDismissVideo}
-                    sx={{ color: 'grey.500', '&:hover': { color: 'grey.700' } }}
-                  >
-                    <X size={20} />
-                  </Button>
-                </Box>
-                
-                <Box sx={{ display: 'flex', justifyContent: 'center' }}>
-                  <Box sx={{ 
-                    backgroundColor: 'white', 
-                    borderRadius: 2, 
-                    p: 0.5, 
-                    boxShadow: 'inset 0 2px 4px 0 rgb(0 0 0 / 0.05)', 
-                    maxWidth: 400, 
-                    width: '100%' 
-                  }}>
-                    <iframe
-                      width="100%"
-                      height="250"
-                      src="https://www.youtube.com/embed/dQw4w9WgXcQ"
-                      title="Credit Repair Tutorial"
-                      frameBorder="0"
-                      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                      allowFullScreen
-                      style={{ borderRadius: 8 }}
-                    ></iframe>
-                  </Box>
-                </Box>
-                
-                <Box sx={{ mt: 2, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                    <Typography variant="body2" color="text.secondary">• Step 1: Run AI Analysis</Typography>
-                    <Typography variant="body2" color="text.secondary">• Step 2: Select Items to Dispute</Typography>
-                    <Typography variant="body2" color="text.secondary">• Step 3: Generate Letters</Typography>
-                  </Box>
-                  <Button
-                    variant="outlined"
-                    size="small"
-                    onClick={handleDismissVideo}
-                    sx={{ 
-                      color: 'primary.main', 
-                      borderColor: 'primary.main',
-                      '&:hover': { backgroundColor: 'primary.50' }
-                    }}
-                  >
-                    Got it, hide this
-                  </Button>
-                </Box>
-              </CardContent>
-            </Card>
-          </Box>
-        )}
-
-
+    <div className="min-h-screen bg-gray-50">
+      <div className="max-w-7xl mx-auto py-2 px-4">
+        {/* Header */}
+        <CreditReportHeader />
 
         {/* Name Section */}
-        <div className="text-center mb-8">
-          <h1 className="text-4xl font-bold text-gray-900 mb-2">
-            {creditData ? `${creditData.CREDIT_RESPONSE.BORROWER["@_FirstName"]} ${creditData.CREDIT_RESPONSE.BORROWER["@_LastName"]}` : 'DONALD BLAIR'}
+        <div className="text-center mb-4 mt-6">
+          <h1 className="text-3xl md:text-5xl font-bold text-slate-900 mb-1 tracking-tight">
+            {creditData
+              ? `${creditData.CREDIT_RESPONSE.BORROWER['@_FirstName']} ${creditData.CREDIT_RESPONSE.BORROWER['@_LastName']}`
+              : 'DONALD BLAIR'}
           </h1>
-          <p className="text-gray-600">
-            SSN: {creditData && creditData.CREDIT_RESPONSE.BORROWER["@_SSN"] && 
-              creditData.CREDIT_RESPONSE.BORROWER["@_SSN"] !== "XXXXXXXXX" ? 
-                `XXX-XX-${creditData.CREDIT_RESPONSE.BORROWER["@_SSN"].slice(-4)}` : 
-                'XXX-XX-XXXX'}
+          <p className="text-slate-600 text-base font-medium">
+            SSN:{' '}
+            {creditData &&
+            creditData.CREDIT_RESPONSE.BORROWER['@_SSN'] &&
+            creditData.CREDIT_RESPONSE.BORROWER['@_SSN'] !== 'XXXXXXXXX'
+              ? `XXX-XX-${creditData.CREDIT_RESPONSE.BORROWER['@_SSN'].slice(-4)}`
+              : 'XXX-XX-XXXX'}
           </p>
         </div>
-
-
 
         {/* AI-Powered Compliance Scan */}
         <div className="mb-8">
           <div className="flex justify-center">
-            {!showAiSummary ? (
-              <div>
-                <Button 
-                  onClick={handleAiScan} 
-                  disabled={isAiScanning}
-                  variant="contained"
-                  sx={{
-                    background: 'linear-gradient(to right, #9333ea, #2563eb)',
-                    '&:hover': {
-                      background: 'linear-gradient(to right, #7c3aed, #1d4ed8)',
-                      transform: 'scale(1.05)'
-                    },
-                    color: 'white',
-                    fontSize: { xs: '1.25rem', md: '2.5rem' },
-                    fontWeight: 600,
-                    borderRadius: 2,
-                    boxShadow: 3,
-                    transition: 'all 0.2s',
-                    minWidth: { xs: '220px', md: '280px' },
-                    minHeight: { xs: '50px', md: '50px' },
-                    px: { xs: 2, md: 4 },
-                    py: { xs: 1.5, md: 1.5 },
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center'
-                  }}
-                >
-                  {isAiScanning ? (
-                    <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                      <CircularProgress size={20} sx={{ color: 'white', mr: 1.5 }} />
-                      <Typography sx={{ color: 'white' }}>Scanning...</Typography>
-                    </Box>
-                  ) : (
-                    <Box sx={{ 
-                      display: 'flex', 
-                      flexDirection: 'column', 
-                      alignItems: 'center', 
-                      justifyContent: 'center',
-                      height: '100%',
-                      width: '100%'
-                    }}>
-                      <Box sx={{ 
-                        display: 'flex', 
-                        alignItems: 'center', 
-                        justifyContent: 'center',
-                        mb: { xs: 0, md: 1 }
-                      }}>
-                        <Sparkles 
-                          size={20} 
-                          className="text-white animate-pulse mr-2"
-                        />
-                        <Typography sx={{ 
-                          color: 'white', 
-                          fontWeight: 600, 
-                          textTransform: 'none',
-                          fontSize: { xs: '1.3rem', md: '1.4rem' },
-                          whiteSpace: 'nowrap'
-                        }}>
-                          AI Metro 2 / Compliance Scan
-                        </Typography>
-                        <Sparkles 
-                          size={20} 
-                          className="text-white animate-pulse ml-2"
-                        />
-                      </Box>
-                      <Typography sx={{ 
-                        fontSize: '10px',
-                        color: 'white',
-                        opacity: 0.8,
-                        textAlign: 'center',
-                        lineHeight: 1.2,
-                        px: 3,
-                        display: { xs: 'none', md: 'block' },
-                        textTransform: 'none'
-                      }}>
-                        Powered by AI to identify violations and generate best practice dispute suggestions
-                      </Typography>
-                    </Box>
-                  )}
-                </Button>
-              </div>
-            ) : (
-              <div className="bg-white border border-gray-200 rounded-xl shadow-lg p-8 relative" data-section="scan-complete">
-                <button
-                  onClick={() => setShowAiSummary(false)}
-                  className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 transition-colors"
-                >
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-                
-                {/* Header with AI branding */}
-                <div className="text-center mb-8">
-                  <div className="flex items-center justify-center gap-3 mb-4">
-                    <div className="w-12 h-12 bg-gradient-to-r from-blue-600 to-purple-600 rounded-full flex items-center justify-center shadow-lg">
-                      <Zap className="w-6 h-6 text-white" />
-                    </div>
-                    <div className="text-left">
-                      <h3 className="text-2xl font-bold text-gray-900">AI Analysis Complete</h3>
-                      <p className="text-sm text-gray-500 font-medium">Powered by Metro 2 Intelligence</p>
-                    </div>
-                  </div>
-                </div>
+            {!showAiSummary && !isAiScanning && !aiScanDismissed && (
+              <Button
+                onClick={handleAiScan}
+                className="bg-blue-700 hover:bg-blue-800 border-2 border-blue-700 hover:border-blue-800 text-white font-semibold text-lg px-6 py-3 rounded-lg shadow-lg transition-all duration-300 hover:scale-105 min-w-[280px] flex items-center justify-center gap-2"
+              >
+                <Zap className="w-4 h-4" />
+                AI Metro 2 / Compliance Scan
+              </Button>
+            )}
 
-                {/* Results Summary */}
-                <div className="text-center mb-8">
-                  <div className="bg-gradient-to-br from-blue-50 to-purple-50 rounded-xl p-6 mb-6">
-                    <div className="text-4xl font-bold text-gray-900 mb-2">{aiSummaryData.totalViolations}</div>
-                    <div className="text-xl font-semibold text-gray-700 mb-3">Violations Detected</div>
-                    {(() => {
-                      const metro2Count = Math.floor(aiSummaryData.totalViolations * 0.6);
-                      const fcraCount = aiSummaryData.totalViolations - metro2Count;
-                      if (metro2Count > 0 && fcraCount > 0) {
-                        return (
-                          <div className="flex items-center justify-center gap-6">
-                            <div className="text-center">
-                              <div className="text-lg font-bold text-blue-600">{metro2Count}</div>
-                              <div className="text-sm text-gray-600">Metro 2</div>
-                            </div>
-                            <div className="w-px h-8 bg-gray-300"></div>
-                            <div className="text-center">
-                              <div className="text-lg font-bold text-purple-600">{fcraCount}</div>
-                              <div className="text-sm text-gray-600">FCRA</div>
-                            </div>
-                          </div>
-                        );
-                      } else if (metro2Count > 0) {
-                        return <div className="text-base text-blue-600 font-medium">{metro2Count} Metro 2 Violations</div>;
-                      } else if (fcraCount > 0) {
-                        return <div className="text-base text-purple-600 font-medium">{fcraCount} FCRA Violations</div>;
-                      }
-                      return null;
-                    })()}
+            {!showAiSummary && !isAiScanning && aiScanDismissed && (
+              <div className="flex items-center justify-center bg-green-50 border border-green-200 rounded-lg px-4 py-2 max-w-md">
+                <div className="flex items-center gap-2 text-green-700">
+                  <div className="w-5 h-5 bg-green-100 rounded-full flex items-center justify-center">
+                    <span className="text-green-600 text-xs">✓</span>
                   </div>
-                  
-                  {aiScanCompleted && aiSummaryData.totalViolations > 0 && (
-                    <div className="bg-green-50 border border-green-200 rounded-lg p-4 mb-6">
-                      <div className="flex items-center justify-center gap-2">
-                        <svg className="w-5 h-5 text-green-600" fill="currentColor" viewBox="0 0 20 20">
-                          <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                        </svg>
-                        <span className="text-green-800 font-semibold text-base hidden sm:inline">AI-Generated Dispute Strategies Available</span>
-                        <span className="text-green-800 font-semibold text-base sm:hidden">AI-Dispute Strategies Available</span>
-                      </div>
-                    </div>
-                  )}
+                  <span className="text-sm font-medium">AI scan completed</span>
+                  <span className="text-xs text-green-600">• View dispute suggestions below</span>
                 </div>
-
-                {/* Next Step Button */}
-                <button 
-                  onClick={() => {
-                    // Scroll to Quick Start instructions for both mobile and desktop
-                    const quickStartSection = document.querySelector('.mt-12');
-                    if (quickStartSection) {
-                      const rect = quickStartSection.getBoundingClientRect();
-                      const offsetTop = window.pageYOffset + rect.top - 80;
-                      window.scrollTo({ top: offsetTop, behavior: 'smooth' });
-                    }
-                  }}
-                  className="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white rounded-lg p-4 transition-all duration-200 shadow-md hover:shadow-lg"
-                >
-                  <div className="flex items-center justify-center">
-                    <span className="font-semibold text-base hidden sm:inline">Continue to Credit Scores & Process Report</span>
-                    <span className="font-semibold text-base sm:hidden">Continue to Process Report</span>
-                    <svg className="w-5 h-5 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                    </svg>
-                  </div>
-                </button>
               </div>
             )}
 
             {isAiScanning && (
-              <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-                <div className="bg-gradient-to-br from-blue-50 to-purple-50 border-2 border-blue-300 rounded-xl p-8 mx-4 max-w-2xl shadow-2xl">
-                  <div className="text-center">
-                    <div className="relative mb-6">
-                      <div className="w-16 h-16 bg-gradient-to-r from-blue-600 to-purple-600 rounded-full flex items-center justify-center mx-auto">
-                        <Zap className="w-8 h-8 text-white" />
+              <div className="flex flex-col items-center space-y-4">
+                <div className="flex items-center space-x-3">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+                  <span className="text-lg font-semibold text-blue-600">
+                    AI is scanning your credit report...
+                  </span>
+                </div>
+                <p className="text-sm text-gray-600 text-center max-w-md">
+                  Examining all accounts, inquiries, and public records for compliance violations
+                  and generating dispute suggestions
+                </p>
+              </div>
+            )}
+
+            {showAiSummary && (
+              <Card className="w-full max-w-2xl border-2 border-blue-200 bg-blue-50">
+                <CardHeader className="text-center">
+                  <h3 className="text-xl font-bold text-blue-800 flex items-center justify-center gap-2">
+                    <Zap className="w-6 h-6" />
+                    AI Metro 2 / Compliance Scan Complete
+                  </h3>
+                </CardHeader>
+                <CardContent className="text-center space-y-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="bg-white rounded-lg p-4 border border-blue-200">
+                      <div className="text-2xl font-bold text-blue-700">
+                        {aiSummaryData.totalViolations}
                       </div>
-                      <div className="absolute -inset-2 bg-purple-400 rounded-full opacity-20 animate-ping"></div>
-                      <div className="absolute -inset-4 bg-blue-400 rounded-full opacity-10 animate-ping" style={{ animationDelay: '0.5s' }}></div>
+                      <div className="text-sm text-gray-600">Total Violations Found</div>
                     </div>
-                    
-                    <div className="mb-6">
-                      <h3 className="text-2xl font-bold text-gray-800 mb-2">AI Metro 2 Analysis</h3>
-                      <p className="text-gray-600">Scanning for compliance violations</p>
-                    </div>
-                    
-                    <div className="space-y-3">
-                      <div className="flex items-center space-x-3 text-gray-700 bg-white rounded-lg p-3 shadow-sm">
-                        <div className="w-3 h-3 bg-green-500 rounded-full animate-pulse"></div>
-                        <span>Analyzing negative accounts...</span>
-                        <div className="flex space-x-1 ml-auto">
-                          <div className="w-1 h-4 bg-purple-400 rounded animate-pulse"></div>
-                          <div className="w-1 h-3 bg-indigo-400 rounded animate-pulse" style={{ animationDelay: '0.1s' }}></div>
-                          <div className="w-1 h-5 bg-blue-400 rounded animate-pulse" style={{ animationDelay: '0.2s' }}></div>
-                        </div>
+                    <div className="bg-white rounded-lg p-4 border border-blue-200">
+                      <div className="text-2xl font-bold text-blue-700">
+                        {aiSummaryData.affectedAccounts}
                       </div>
-                      
-                      <div className="flex items-center space-x-3 text-gray-700 bg-white rounded-lg p-3 shadow-sm">
-                        <div className="w-3 h-3 bg-blue-500 rounded-full animate-pulse" style={{ animationDelay: '0.5s' }}></div>
-                        <span>Checking Metro 2 standards...</span>
-                        <div className="flex space-x-1 ml-auto">
-                          <div className="w-1 h-4 bg-blue-400 rounded animate-pulse" style={{ animationDelay: '0.3s' }}></div>
-                          <div className="w-1 h-3 bg-indigo-400 rounded animate-pulse" style={{ animationDelay: '0.4s' }}></div>
-                        </div>
-                      </div>
-                      
-                      <div className="flex items-center space-x-3 text-gray-700 bg-white rounded-lg p-3 shadow-sm">
-                        <div className="w-3 h-3 bg-purple-500 rounded-full animate-pulse" style={{ animationDelay: '1s' }}></div>
-                        <span>Identifying violations...</span>
-                        <div className="flex space-x-1 ml-auto">
-                          <div className="w-1 h-3 bg-purple-400 rounded animate-pulse" style={{ animationDelay: '0.5s' }}></div>
-                          <div className="w-1 h-5 bg-blue-400 rounded animate-pulse" style={{ animationDelay: '0.6s' }}></div>
-                        </div>
-                      </div>
-                    </div>
-                    
-                    <div className="mt-6 flex justify-center">
-                      <div className="flex space-x-1">
-                        {[...Array(12)].map((_, i) => (
-                          <div
-                            key={i}
-                            className="w-2 h-2 bg-gradient-to-r from-purple-400 to-blue-400 rounded-full opacity-0 animate-pulse"
-                            style={{ 
-                              animationDelay: `${i * 0.1}s`,
-                              animationDuration: '1s',
-                              animationFillMode: 'forwards'
-                            }}
-                          ></div>
-                        ))}
-                      </div>
+                      <div className="text-sm text-gray-600">Accounts Affected</div>
                     </div>
                   </div>
-                </div>
-              </div>
+                  <p className="text-sm text-gray-600">
+                    Metro 2, FCRA, and FDCPA violations detected. View accounts below for AI dispute
+                    suggestions.
+                  </p>
+                  <Button
+                    onClick={() => {
+                      setShowAiSummary(false);
+                      setAiScanDismissed(true);
+                    }}
+                    variant="outline"
+                    className="border-blue-300 text-blue-700 hover:bg-blue-100 hover:text-blue-900"
+                  >
+                    Got it, hide this
+                  </Button>
+                </CardContent>
+              </Card>
             )}
           </div>
         </div>
 
-
-
-
-
-
-
-
-        <div className="mt-12">
-          {/* Instructions for first-time visitors */}
-          <div className="mb-6 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-            <p className="text-sm text-blue-800">
-              <strong>Quick Start:</strong> Look for red negative items or any inaccuracies below. Select a reason and instructions for each, then click save to continue.
-            </p>
-          </div>
-
-          {/* Credit Scores */}
-          <div className="mb-8" data-section="credit-scores">
-            <div className="flex items-center justify-between mb-6">
-              <div className="flex items-center gap-3">
-                <Gauge className="w-6 h-6 text-blue-600" />
-                <h3 className="text-2xl font-bold text-gray-900">Credit Scores</h3>
-              </div>
-            </div>
-
-
-
-
-            {/* Compact Score Gauges */}
-            <div className="mb-6">
-              <Card className="border-2 border-gray-200 bg-white p-6">
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-                  {/* TransUnion - Circular Gauge */}
-                  <div className="space-y-3 border-b md:border-b-0 md:border-r border-gray-100 pb-4 md:pb-0 md:pr-4">
-                    <div className="flex items-start justify-center h-10 mb-2 -mt-1">
-                      <img src={transUnionLogo} alt="TransUnion" className="h-9 object-contain" />
-                    </div>
-                    
-                    {/* Score Gauge with PNG */}
-                    <div className="flex flex-col items-center">
-                      <div className="relative w-48 h-24 mb-3">
-                        <img src={scoreGaugeArc} alt="Score Gauge" className="w-full h-full object-contain" />
-                        
-                        {/* Very Good text - positioned above score but under arc */}
-                        <div className="absolute inset-0 flex flex-col items-center justify-center" style={{ marginBottom: '20px' }}>
-                          <div className="text-xs font-semibold text-gray-500">
-                            Very Good
-                          </div>
-                        </div>
-                        
-                        {/* Score in center */}
-                        <div className="absolute inset-0 flex flex-col items-center justify-end" style={{ marginBottom: '-5px' }}>
-                          <div className="text-5xl font-black text-gray-700">742</div>
-                        </div>
-                        
-                        {/* Score Change Badge - Top Right */}
-                        <div className="absolute -top-1 -right-1 bg-green-500 text-white px-1.5 py-0.5 rounded-full text-xs font-bold shadow-sm">
-                          +12
-                        </div>
-                      </div>
-                      
-                      {/* Starting Score Text */}
-                      <div className="text-sm font-medium text-gray-600 mt-2">
-                        Starting Score: 590
-                      </div>
-                    </div>
-                    
-                  </div>
-                  
-                  {/* Equifax - Circular Gauge */}
-                  <div className="space-y-3 border-b md:border-b-0 md:border-r border-gray-100 pb-4 md:pb-0 md:pr-4">
-                    <div className="flex items-center justify-center h-10 mb-2">
-                      <img src={equifaxLogo} alt="Equifax" className="h-6 object-contain" />
-                    </div>
-                    
-                    {/* Score Gauge with PNG */}
-                    <div className="flex flex-col items-center">
-                      <div className="relative w-48 h-24 mb-3">
-                        <img src={scoreGaugeArc} alt="Score Gauge" className="w-full h-full object-contain" />
-                        
-                        {/* Fair text - positioned above score but under arc */}
-                        <div className="absolute inset-0 flex flex-col items-center justify-center" style={{ marginBottom: '20px' }}>
-                          <div className="text-xs font-semibold text-gray-500">
-                            Fair
-                          </div>
-                        </div>
-                        
-                        {/* Score in center */}
-                        <div className="absolute inset-0 flex flex-col items-center justify-end" style={{ marginBottom: '-5px' }}>
-                          <div className="text-5xl font-black text-gray-700">687</div>
-                        </div>
-                        
-                        {/* Score Change Badge - Top Right */}
-                        <div className="absolute -top-1 -right-1 bg-green-500 text-white px-1.5 py-0.5 rounded-full text-xs font-bold shadow-sm">
-                          +18
-                        </div>
-                      </div>
-                      
-                      {/* Starting Score Text */}
-                      <div className="text-sm font-medium text-gray-600 mt-2">
-                        Starting Score: 590
-                      </div>
-                    </div>
-                  </div>
-                  
-                  {/* Experian - Circular Gauge */}
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-center h-10 mb-2">
-                      <img src={experianLogo} alt="Experian" className="h-9 object-contain" />
-                    </div>
-                    
-                    {/* Score Gauge with PNG */}
-                    <div className="flex flex-col items-center">
-                      <div className="relative w-48 h-24 mb-3">
-                        <img src={scoreGaugeArc} alt="Score Gauge" className="w-full h-full object-contain" />
-                        
-                        {/* Very Good text - positioned above score but under arc */}
-                        <div className="absolute inset-0 flex flex-col items-center justify-center" style={{ marginBottom: '20px' }}>
-                          <div className="text-xs font-semibold text-gray-500">
-                            Very Good
-                          </div>
-                        </div>
-                        
-                        {/* Score in center */}
-                        <div className="absolute inset-0 flex flex-col items-center justify-end" style={{ marginBottom: '-5px' }}>
-                          <div className="text-5xl font-black text-gray-700">756</div>
-                        </div>
-                        
-                        {/* Score Change Badge - Top Right */}
-                        <div className="absolute -top-1 -right-1 bg-green-500 text-white px-1.5 py-0.5 rounded-full text-xs font-bold shadow-sm">
-                          +15
-                        </div>
-                      </div>
-                      
-                      {/* Starting Score Text */}
-                      <div className="text-sm font-medium text-gray-600 mt-2">
-                        Starting Score: 590
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </Card>
-            </div>
-
-            {/* Outstanding Progress Banner */}
-            <div className="bg-green-50 border border-green-200 rounded-lg p-4 mb-6">
-              <div className="flex items-center gap-3">
-                <div className="w-8 h-8 bg-green-500 rounded-full flex items-center justify-center flex-shrink-0">
-                  <CheckCircle className="w-5 h-5 text-white" />
-                </div>
-                <div className="flex-1">
-                  <h4 className="text-green-800 font-bold text-lg mb-1">
-                    Outstanding Progress! +244 Total Points Gained! 
-                    <span className="text-green-700 text-sm font-normal ml-2 hidden md:inline">Credit Hero, you've transformed this client's credit profile - incredible work!</span>
-                  </h4>
-                </div>
-              </div>
-            </div>
-
-            {/* Account Summary - moved directly below credit scores */}
-            <div className="mb-8">
-              <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-                {/* Points Raised */}
-                <Card className="bg-white border border-gray-200 p-3">
-                  <div className="flex items-center gap-2">
-                    <div className="text-lg md:text-lg font-bold text-green-600">+122</div>
-                    <div className="flex-1">
-                      <div className="text-xs text-gray-700">
-                        <span className="md:hidden font-medium">Points Raised</span>
-                        <span className="hidden md:inline"><span className="font-medium">Points Raised</span> since start of credit repair</span>
-                      </div>
-                      <div className="text-xs text-gray-400 md:hidden">since start of repair</div>
-                    </div>
-                    <div className="text-green-500 hidden md:block">
-                      <TrendingUp className="w-5 h-5" />
-                    </div>
-                  </div>
-                </Card>
-
-                {/* Points Gained */}
-                <Card className="bg-white border border-gray-200 p-3">
-                  <div className="flex items-center gap-2">
-                    <div className="text-lg md:text-lg font-bold text-green-600">+35</div>
-                    <div className="flex-1">
-                      <div className="text-xs text-gray-700">
-                        <span className="md:hidden font-medium">Points Gained</span>
-                        <span className="hidden md:inline"><span className="font-medium">Points Gained</span> since last import</span>
-                      </div>
-                      <div className="text-xs text-gray-400 md:hidden">since last import</div>
-                    </div>
-                    <div className="text-green-500 hidden md:block">
-                      <ArrowUp className="w-5 h-5" />
-                    </div>
-                  </div>
-                </Card>
-
-                {/* Items Removed */}
-                <Card className="bg-white border border-gray-200 p-3">
-                  <div className="flex items-center gap-2">
-                    <div className="text-lg md:text-lg font-bold text-green-600">23</div>
-                    <div className="flex-1">
-                      <div className="text-xs text-gray-700">
-                        <span className="md:hidden font-medium">Items Removed</span>
-                        <span className="hidden md:inline"><span className="font-medium">Items Removed</span> since start of credit repair</span>
-                      </div>
-                      <div className="text-xs text-gray-400 md:hidden">since start of repair</div>
-                    </div>
-                    <div className="text-green-500 hidden md:block">
-                      <CheckCircle className="w-5 h-5" />
-                    </div>
-                  </div>
-                </Card>
-
-                {/* Negative Items */}
-                <Card className="bg-white border border-gray-200 p-3">
-                  <div className="flex items-center gap-2">
-                    <div className="text-lg md:text-lg font-bold text-red-600">13</div>
-                    <div className="flex-1">
-                      <div className="text-xs text-gray-700">
-                        <span className="md:hidden font-medium">Negative Items</span>
-                        <span className="hidden md:inline"><span className="font-medium">Negative Items</span> in the report below</span>
-                      </div>
-                      <div className="text-xs text-gray-400 md:hidden">in the report below</div>
-                    </div>
-                    <div className="text-red-500 hidden md:block">
-                      <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                        <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-                      </svg>
-                    </div>
-                  </div>
-                </Card>
-
-                {/* Inquiries With Impact */}
-                <Card className="bg-white border border-gray-200 p-3">
-                  <div className="flex items-center gap-2">
-                    <div className="text-lg md:text-lg font-bold text-orange-600">28</div>
-                    <div className="flex-1">
-                      <div className="text-xs text-gray-700">
-                        <span className="md:hidden font-medium">Inquiries With Impact</span>
-                        <span className="hidden md:inline"><span className="font-medium">Inquiries With Impact</span><br />+25 with no impact</span>
-                      </div>
-                      <div className="text-xs text-gray-400 md:hidden">+25 with no impact</div>
-                    </div>
-                    <div className="text-orange-500 hidden md:block">
-                      <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                        <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
-                      </svg>
-                    </div>
-                  </div>
-                </Card>
-              </div>
-            </div>
-
-
-
-            {/* Credit Summary Section */}
-            <div className="mb-12 mt-12" data-section="credit-summary">
-              <CreditSummary creditData={creditData} />
+        {/* Credit Scores */}
+        <div className="mb-12 mt-12" data-section="credit-scores">
+          <div className="flex items-center justify-between mb-6">
+            <div className="flex items-center gap-3">
+              <h3 className="text-2xl font-bold text-gray-900">Credit Scores</h3>
             </div>
           </div>
 
-          {/* Personal Information Section */}
-          <div className="mb-12 mt-12" data-section="personal-info">
-            <ModernPersonalInfo 
-              borrower={creditData.CREDIT_RESPONSE.BORROWER}
-              reportInfo={{
-                "@CreditResponseID": creditData.CREDIT_RESPONSE["@CreditResponseID"],
-                "@CreditReportFirstIssuedDate": creditData.CREDIT_RESPONSE["@CreditReportFirstIssuedDate"]
-              }}
-            />
-          </div>
-
-          {/* Hard Inquiries Section */}
-          <div className="mb-12 mt-12" data-section="inquiries">
-            <ModernInquiries creditData={creditData} />
-          </div>
-
-          {/* Credit Accounts Section */}
-          <div className="mb-12 mt-12" data-section="credit-accounts">
-            <div className="flex items-start md:items-center justify-between gap-3 mb-6">
-              <div className="flex items-start md:items-center gap-3">
-                {areAllNegativeAccountsSaved() ? (
-                  <CheckCircle className="w-8 h-8 md:w-6 md:h-6 text-green-600 mt-1 md:mt-0" />
-                ) : (
-                  <CheckCircle className="w-8 h-8 md:w-6 md:h-6 text-blue-600 mt-1 md:mt-0" />
-                )}
-                <h3 className={`text-2xl font-bold transition-colors duration-300 ${
-                  areAllNegativeAccountsSaved() ? 'text-green-800' : 'text-gray-900'
-                }`}>
-                  Credit Accounts {areAllNegativeAccountsSaved() && '✓'}
-                </h3>
-              </div>
-              
-              {/* Switch-style Toggle - Hidden on mobile */}
-              <div className="hidden md:flex items-center gap-4">
-                <div className="flex items-center gap-3">
-                  <span className="text-sm text-gray-600">
-                    {showPositivesFirst ? 'Positives First' : 'Report Order'}
-                  </span>
-                  <button
-                    onClick={() => setShowPositivesFirst(!showPositivesFirst)}
-                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
-                      showPositivesFirst ? 'bg-gray-300' : 'bg-blue-600'
-                    }`}
-                  >
-                    <span
-                      className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform duration-200 ${
-                        showPositivesFirst ? 'translate-x-1' : 'translate-x-6'
-                      }`}
+          {/* Compact Score Gauges */}
+          <div className="mb-6">
+            <Card className="border-2 border-gray-200 bg-white p-6">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+                {/* TransUnion - Circular Gauge */}
+                <div className="space-y-3 border-b md:border-b-0 md:border-r border-gray-100 pb-4 md:pb-0 md:pr-4">
+                  <div className="flex items-start justify-center h-10 mb-2 -mt-1">
+                    <img
+                      src={transUnionLogo}
+                      alt="TransUnion"
+                      className="h-9 object-contain -mt-1"
                     />
-                  </button>
-                </div>
-              </div>
-            </div>
-            
+                  </div>
 
+                  {/* Score Gauge with PNG */}
+                  <div className="flex flex-col items-center">
+                    <div className="relative w-48 h-24 mb-3">
+                      <img
+                        src={scoreGaugeArc}
+                        alt="Score Gauge"
+                        className="w-full h-full object-contain"
+                      />
 
-            <div>
-              {/* Display accounts with custom spacing control */}
-              {(() => {
-                const elements = [];
-                
-                if (showPositivesFirst) {
-                  // Group by type when "Positives First" is enabled
-                  const positiveAccounts = uniqueAccounts.filter(account => 
-                    !isNegativeAccount(account) && !isClosedAccount(account)
-                  );
-                  const closedAccounts = uniqueAccounts.filter(account => 
-                    isClosedAccount(account) && !isNegativeAccount(account)
-                  );
-                  const negativeAccounts = uniqueAccounts.filter(account => 
-                    isNegativeAccount(account)
-                  );
-                  
-                  // Add combined positive and closed accounts section
-                  if (positiveAccounts.length > 0 || closedAccounts.length > 0) {
-                    const totalAccounts = positiveAccounts.length + closedAccounts.length;
-                    
-                    // Collapsed combined accounts section
-                    if (!showPositiveAndClosedAccounts) {
-                      elements.push(
-                        <div key="positive-closed-accounts-collapsed" className="mb-6">
-                          <div 
-                            className="flex items-center justify-between p-4 bg-white border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-50 transition-colors"
-                            onClick={() => setShowPositiveAndClosedAccounts(true)}
-                          >
-                            <div className="flex items-center gap-3">
-                              <div className="w-3 h-3 bg-green-500 rounded-full flex-shrink-0"></div>
-                              <div>
-                                <h3 className="font-semibold text-gray-900">
-                                  {totalAccounts} Positive & Closed Account{totalAccounts === 1 ? '' : 's'}
-                                </h3>
-                                <p className="text-sm text-gray-600">
-                                  {positiveAccounts.length} positive{closedAccounts.length > 0 ? `, ${closedAccounts.length} closed` : ''}
-                                </p>
-                              </div>
-                            </div>
-                            <svg className="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                            </svg>
-                          </div>
-                        </div>
-                      );
-                    }
-                    
-                    // Expanded combined accounts section
-                    if (showPositiveAndClosedAccounts) {
-                      elements.push(
-                        <div key="positive-closed-accounts-expanded" className="mb-3 p-4 bg-white border border-gray-200 rounded-lg">
-                          {/* Header with collapse button */}
-                          <div className="mb-4">
-                            <div 
-                              className="flex items-center justify-between cursor-pointer hover:bg-gray-50 transition-colors p-2 -m-2 rounded"
-                              onClick={() => setShowPositiveAndClosedAccounts(false)}
-                            >
-                              <div className="flex items-center gap-3">
-                                <div className="w-3 h-3 bg-green-500 rounded-full"></div>
-                                <div>
-                                  <h3 className="font-semibold text-gray-900">
-                                    {totalAccounts} Positive & Closed Account{totalAccounts === 1 ? '' : 's'}
-                                  </h3>
-                                  <p className="text-sm text-gray-600">
-                                    {positiveAccounts.length} positive{closedAccounts.length > 0 ? `, ${closedAccounts.length} closed` : ''}
-                                  </p>
-                                </div>
-                              </div>
-                              <svg className="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
-                              </svg>
-                            </div>
-                          </div>
-                          
-                          {/* Combined accounts list */}
-                          <div className="space-y-6">
-                            {/* Positive accounts */}
-                            {positiveAccounts.map((account, index) => {
-                              const accountId = account["@CreditLiabilityID"] || index.toString();
-                              const accountViolations = aiScanCompleted ? (aiViolations[accountId] || []) : [];
-                              
-                              return (
-                                <ModernAccountRow
-                                  key={`positive-${accountId}`}
-                                  account={account}
-                                  onDispute={handleDisputeAccount}
-                                  aiViolations={accountViolations}
-                                  disputeReasons={disputeReasons}
-                                  disputeInstructions={disputeInstructions}
-                                  showDropdowns={true}
-                                  onDisputeSaved={handleAccountDisputeSaved}
-                                  expandAll={expandAllAccounts}
-                                  aiScanCompleted={aiScanCompleted}
-                                />
-                              );
-                            })}
-                            
-                            {/* Closed accounts */}
-                            {closedAccounts.map((account, index) => {
-                              const accountId = account["@CreditLiabilityID"] || index.toString();
-                              const accountViolations = aiScanCompleted ? (aiViolations[accountId] || []) : [];
-                              
-                              return (
-                                <ModernAccountRow
-                                  key={`closed-${accountId}`}
-                                  account={account}
-                                  onDispute={handleDisputeAccount}
-                                  aiViolations={accountViolations}
-                                  disputeReasons={disputeReasons}
-                                  disputeInstructions={disputeInstructions}
-                                  showDropdowns={true}
-                                  onDisputeSaved={handleAccountDisputeSaved}
-                                  expandAll={expandAllAccounts}
-                                  aiScanCompleted={aiScanCompleted}
-                                />
-                              );
-                            })}
-                          </div>
-                          
-                          {/* Hide Details link at bottom */}
-                          <div className="flex justify-center mt-1 pt-1 border-t border-gray-100">
-                            <button
-                              onClick={() => setShowPositiveAndClosedAccounts(false)}
-                              className="flex items-center gap-2 text-blue-600 hover:text-blue-800 text-sm font-medium transition-colors"
-                            >
-                              Hide Details
-                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
-                              </svg>
-                            </button>
-                          </div>
-                        </div>
-                      );
-                    }
-                  }
-                  
-                  // Add Action Required section before negative accounts
-                  if (negativeAccounts.length > 0) {
-                    const hasNegativeAccountsOnly = negativeAccounts.length > 0;
-                    const hasPublicRecordsOnly = hasPublicRecords();
-                    const hasAnyNegativeItems = hasNegativeAccountsOnly || hasPublicRecordsOnly;
-                    
-
-                    
-                    // Calculate total negative items (accounts + public records)
-                    const publicRecordsCount = 0; // Set to actual count when public records are implemented
-                    const totalNegativeCount = negativeAccounts.length + publicRecordsCount;
-                    
-                    // Add negative accounts as a connected section
-                    elements.push(
-                      <div key="negative-accounts-section" className="mb-6">
-                        {/* Header */}
-                        <div className="flex items-center justify-between p-4 bg-white border border-gray-200 rounded-t-lg border-b-0">
-                          <div className="flex items-center gap-3">
-                            <div className="w-3 h-3 bg-red-600 rounded-full flex-shrink-0"></div>
-                            <div>
-                              <h3 className="font-semibold text-gray-900">
-                                {totalNegativeCount} Negative Account{totalNegativeCount === 1 ? '' : 's'}
-                              </h3>
-                              <p className="text-sm text-red-600 font-medium">Action Required - <span className="text-sm md:text-xs text-gray-600">Complete steps 1-2-3 for each negative account below</span></p>
-                            </div>
-                          </div>
-                          <button
-                            onClick={() => setExpandAllAccounts(!expandAllAccounts)}
-                            className="hidden md:flex items-center gap-1 text-blue-600 hover:text-blue-800 font-medium text-sm transition-colors"
-                          >
-                            <span>{expandAllAccounts ? 'Collapse All' : 'Expand All'}</span>
-                            <svg 
-                              className={`w-4 h-4 transition-transform ${expandAllAccounts ? 'rotate-180' : ''}`} 
-                              fill="none" 
-                              stroke="currentColor" 
-                              viewBox="0 0 24 24"
-                            >
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                            </svg>
-                          </button>
-                        </div>
-                        
-                        {/* Connected accounts list */}
-                        <div className="bg-white border border-gray-200 border-t-0 rounded-b-lg px-4 pt-0 pb-6">
-                          <div className="space-y-6">
-                            {negativeAccounts.map((account, index) => {
-                              const accountId = account["@CreditLiabilityID"] || index.toString();
-                              const accountViolations = aiScanCompleted ? (aiViolations[accountId] || []) : [];
-                              
-                              return (
-                                <ModernAccountRow
-                                  key={`negative-${accountId}`}
-                                  account={account}
-                                  onDispute={handleDisputeAccount}
-                                  aiViolations={accountViolations}
-                                  disputeReasons={disputeReasons}
-                                  disputeInstructions={disputeInstructions}
-                                  showDropdowns={true}
-                                  onDisputeSaved={handleAccountDisputeSaved}
-                                  expandAll={expandAllAccounts}
-                                  aiScanCompleted={aiScanCompleted}
-                                />
-                              );
-                            })}
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  } else {
-                    // Clean slate - no negative accounts with header and 3 bureau columns
-                    elements.push(
-                      <div key="no-negative-accounts-section" className="mb-6">
-                        {/* Header */}
-                        <div className="flex items-center justify-between p-4 bg-white border border-gray-200 rounded-t-lg border-b-0">
-                          <div className="flex items-center gap-3">
-                            <div className="w-3 h-3 bg-green-600 rounded-full flex-shrink-0"></div>
-                            <div>
-                              <h3 className="font-semibold text-gray-900">0 Negative Accounts</h3>
-                              <p className="text-sm text-green-600 font-medium">Clean Credit Profile</p>
-                            </div>
-                          </div>
-                        </div>
-                        
-                        {/* Clean slate content with 3 bureau columns */}
-                        <div className="bg-white border border-gray-200 border-t-0 rounded-b-lg p-6">
-                          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                            {/* TransUnion Clean Slate */}
-                            <div className="flex flex-col">
-                              <div className="mb-3">
-                                <h4 className="font-bold text-cyan-700">TransUnion</h4>
-                              </div>
-                              <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 h-48 flex items-center justify-center">
-                                <div className="text-center">
-                                  <div className="flex items-center justify-center mx-auto mb-3">
-                                    <ThumbsUp className="w-10 h-10 text-green-600" />
-                                  </div>
-                                  <h5 className="text-lg font-semibold text-gray-900 mb-2">Clean slate!</h5>
-                                  <p className="text-sm text-gray-500">No negative accounts</p>
-                                </div>
-                              </div>
-                            </div>
-
-                            {/* Equifax Clean Slate */}
-                            <div className="flex flex-col">
-                              <div className="mb-3">
-                                <h4 className="font-bold text-red-600">Equifax</h4>
-                              </div>
-                              <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 h-48 flex items-center justify-center">
-                                <div className="text-center">
-                                  <div className="flex items-center justify-center mx-auto mb-3">
-                                    <ThumbsUp className="w-10 h-10 text-green-600" />
-                                  </div>
-                                  <h5 className="text-lg font-semibold text-gray-900 mb-2">Clean slate!</h5>
-                                  <p className="text-sm text-gray-500">No negative accounts</p>
-                                </div>
-                              </div>
-                            </div>
-
-                            {/* Experian Clean Slate */}
-                            <div className="flex flex-col">
-                              <div className="mb-3">
-                                <h4 className="font-bold text-blue-700">Experian</h4>
-                              </div>
-                              <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 h-48 flex items-center justify-center">
-                                <div className="text-center">
-                                  <div className="flex items-center justify-center mx-auto mb-3">
-                                    <ThumbsUp className="w-10 h-10 text-green-600" />
-                                  </div>
-                                  <h5 className="text-lg font-semibold text-gray-900 mb-2">Clean slate!</h5>
-                                  <p className="text-sm text-gray-500">No negative accounts</p>
-                                </div>
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  }
-                } else {
-                  // Report order - display all accounts in original sequence without grouping
-                  uniqueAccounts.forEach((account, index) => {
-                    const accountId = account["@CreditLiabilityID"] || index.toString();
-                    const accountViolations = aiScanCompleted ? (aiViolations[accountId] || []) : [];
-                    const accountType = isNegativeAccount(account) ? 'negative' : 
-                                      isClosedAccount(account) ? 'closed' : 'positive';
-                    
-                    elements.push(
-                      <div key={`${accountType}-${accountId}`} className="mb-6">
-                        <ModernAccountRow
-                          account={account}
-                          onDispute={handleDisputeAccount}
-                          aiViolations={accountViolations}
-                          disputeReasons={disputeReasons}
-                          disputeInstructions={disputeInstructions}
-                          showDropdowns={true}
-                          onDisputeSaved={handleAccountDisputeSaved}
-                          expandAll={expandAllAccounts}
-                          aiScanCompleted={aiScanCompleted}
-                        />
-                      </div>
-                    );
-                  });
-                }
-                
-                return elements;
-              })()}
-            </div>
-          </div>
-
-          {/* Public Records Section */}
-          <div className="mb-12 mt-12" data-section="public-records">
-            <div className="flex items-start md:items-center justify-between mb-6">
-              <div className="flex items-center gap-3">
-                <Shield className="w-6 h-6 text-blue-600" />
-                <h3 className="text-2xl font-bold text-gray-900">Public Records</h3>
-              </div>
-              <div className="ml-auto hidden md:block">
-                <div className="text-xs text-gray-500">Things that can show up on a background check can also show up on your credit report, including bankruptcies.</div>
-              </div>
-            </div>
-            <div className="text-xs text-gray-500 md:hidden mb-4">Things that can show up on a background check can also show up on your credit report, including bankruptcies.</div>
-            
-            {/* Conditional Display - Check if there are public records */}
-            {(() => {
-              // Set this to false to show clean slate, true to show bankruptcy records
-              const hasPublicRecords = false;
-              
-              if (!hasPublicRecords) {
-                // Clean Slate Display - White container with three gray boxes inside
-                return (
-                  <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-6">
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                      {/* TransUnion Clean Slate */}
-                      <div className="flex flex-col">
-                        <div className="mb-3">
-                          <h4 className="font-bold text-cyan-700">TransUnion</h4>
-                        </div>
-                        <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 h-48 flex items-center justify-center">
-                          <div className="text-center">
-                            <div className="flex items-center justify-center mx-auto mb-3">
-                              <ThumbsUp className="w-10 h-10 text-green-600" />
-                            </div>
-                            <h5 className="text-lg font-semibold text-gray-900 mb-2">Clean slate!</h5>
-                            <p className="text-sm text-gray-500">You have no public records</p>
-                          </div>
-                        </div>
+                      {/* Very Good text - positioned above score but under arc */}
+                      <div
+                        className="absolute inset-0 flex flex-col items-center justify-center"
+                        style={{ marginBottom: '20px' }}
+                      >
+                        <div className="text-xs font-semibold text-gray-500">Very Good</div>
                       </div>
 
-                      {/* Equifax Clean Slate */}
-                      <div className="flex flex-col">
-                        <div className="mb-3">
-                          <h4 className="font-bold text-red-600">Equifax</h4>
-                        </div>
-                        <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 h-48 flex items-center justify-center">
-                          <div className="text-center">
-                            <div className="flex items-center justify-center mx-auto mb-3">
-                              <ThumbsUp className="w-10 h-10 text-green-600" />
-                            </div>
-                            <h5 className="text-lg font-semibold text-gray-900 mb-2">Clean slate!</h5>
-                            <p className="text-sm text-gray-500">You have no public records</p>
-                          </div>
-                        </div>
+                      {/* Score in center */}
+                      <div
+                        className="absolute inset-0 flex flex-col items-center justify-end"
+                        style={{ marginBottom: '-5px' }}
+                      >
+                        <div className="text-5xl font-black text-gray-700">742</div>
                       </div>
 
-                      {/* Experian Clean Slate */}
-                      <div className="flex flex-col">
-                        <div className="mb-3">
-                          <h4 className="font-bold text-blue-700">Experian</h4>
-                        </div>
-                        <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 h-48 flex items-center justify-center">
-                          <div className="text-center">
-                            <div className="flex items-center justify-center mx-auto mb-3">
-                              <ThumbsUp className="w-10 h-10 text-green-600" />
-                            </div>
-                            <h5 className="text-lg font-semibold text-gray-900 mb-2">Clean slate!</h5>
-                            <p className="text-sm text-gray-500">You have no public records</p>
-                          </div>
-                        </div>
+                      {/* Score Change Badge - Top Right */}
+                      <div className="absolute -top-1 -right-1 bg-green-500 text-white px-1.5 py-0.5 rounded-full text-xs font-bold shadow-sm">
+                        +12
                       </div>
                     </div>
+
+                    {/* Starting Score Text */}
+                    <div className="text-sm font-medium text-gray-600 mt-2">
+                      Starting Score: 590
+                    </div>
                   </div>
-                );
-              } else {
-                // Bankruptcy Records Display
-                return (
-                  <div className="space-y-6">
-                    {/* Bankruptcy Record 1 - Chapter 7 */}
-                    {(() => {
-                      const bankruptcyRecord1 = {
-                        "@_AccountIdentifier": "BANKRUPTCY-001",
-                        "@_SubscriberName": "U.S. BANKRUPTCY COURT",
-                        "@_AccountType": "Public Record",
-                        "@_DerogatoryDataIndicator": "Y",
-                        "@_AccountOpenedDate": "2019-03-15",
-                        "@_AccountClosedDate": "2019-09-15",
-                        "@_CurrentBalance": "0",
-                        "@_UnpaidBalanceAmount": "45000",
-                        "@_AccountStatusType": "Discharged",
-                        "@_PaymentHistoryProfile": "XXXXXXXXXXXXXXXXXXXXXXXXX",
-                        "publicRecordType": "Chapter 7 Bankruptcy",
-                        "courtName": "U.S. Bankruptcy Court - District of Nevada",
-                        "caseNumber": "19-12345-LBR",
-                        "filingDate": "2019-03-15",
-                        "dischargeDate": "2019-09-15",
-                        "liabilities": "$45,000",
-                        "assets": "$12,500",
-                        "status": "Discharged"
-                      };
-                      const accountId = "public-record-bankruptcy-1";
-                      const accountViolations = aiScanCompleted ? (aiViolations[accountId] || []) : [];
-                      
-                      return (
-                        <ModernAccountRow
-                          key={accountId}
-                          account={bankruptcyRecord1}
-                          onDispute={handleDisputeAccount}
-                          aiViolations={accountViolations}
-                          disputeReasons={disputeReasons}
-                          disputeInstructions={disputeInstructions}
-                          showDropdowns={true}
-                          onDisputeSaved={handleAccountDisputeSaved}
-                          aiScanCompleted={aiScanCompleted}
-                        />
-                      );
-                    })()}
+                </div>
 
-                    {/* Bankruptcy Record 2 - Chapter 13 */}
-                    {(() => {
-                      const bankruptcyRecord2 = {
-                        "@_AccountIdentifier": "BANKRUPTCY-002",
-                        "@_SubscriberName": "U.S. BANKRUPTCY COURT",
-                        "@_AccountType": "Public Record",
-                        "@_DerogatoryDataIndicator": "Y",
-                        "@_AccountOpenedDate": "2020-07-22",
-                        "@_AccountClosedDate": "2023-07-22",
-                        "@_CurrentBalance": "0",
-                        "@_UnpaidBalanceAmount": "78500",
-                        "@_AccountStatusType": "Completed",
-                        "@_PaymentHistoryProfile": "XXXXXXXXXXXXXXXXXXXXXXXXX",
-                        "publicRecordType": "Chapter 13 Bankruptcy",
-                        "courtName": "U.S. Bankruptcy Court - District of Nevada",
-                        "caseNumber": "20-67890-LBR",
-                        "filingDate": "2020-07-22",
-                        "completionDate": "2023-07-22",
-                        "liabilities": "$78,500",
-                        "assets": "$35,200",
-                        "status": "Successfully Completed",
-                        "paymentPlan": "36 months at $1,250/month"
-                      };
-                      const accountId = "public-record-bankruptcy-2";
-                      const accountViolations = aiScanCompleted ? (aiViolations[accountId] || []) : [];
-                      
-                      return (
-                        <ModernAccountRow
-                          key={accountId}
-                          account={bankruptcyRecord2}
-                          onDispute={handleDisputeAccount}
-                          aiViolations={accountViolations}
-                          disputeReasons={disputeReasons}
-                          disputeInstructions={disputeInstructions}
-                          showDropdowns={true}
-                          onDisputeSaved={handleAccountDisputeSaved}
-                          aiScanCompleted={aiScanCompleted}
-                        />
-                      );
-                    })()}
+                {/* Equifax - Circular Gauge */}
+                <div className="space-y-3 border-b md:border-b-0 md:border-r border-gray-100 pb-4 md:pb-0 md:pr-4">
+                  <div className="flex items-start justify-center h-10 mb-2 -mt-1">
+                    <img src={equifaxLogo} alt="Equifax" className="h-6 object-contain mt-1" />
                   </div>
-                );
-              }
-            })()}
+
+                  {/* Score Gauge with PNG */}
+                  <div className="flex flex-col items-center">
+                    <div className="relative w-48 h-24 mb-3">
+                      <img
+                        src={scoreGaugeArc}
+                        alt="Score Gauge"
+                        className="w-full h-full object-contain"
+                      />
+
+                      {/* Fair text - positioned above score but under arc */}
+                      <div
+                        className="absolute inset-0 flex flex-col items-center justify-center"
+                        style={{ marginBottom: '20px' }}
+                      >
+                        <div className="text-xs font-semibold text-gray-500">Fair</div>
+                      </div>
+
+                      {/* Score in center */}
+                      <div
+                        className="absolute inset-0 flex flex-col items-center justify-end"
+                        style={{ marginBottom: '-5px' }}
+                      >
+                        <div className="text-5xl font-black text-gray-700">687</div>
+                      </div>
+
+                      {/* Score Change Badge - Top Right */}
+                      <div className="absolute -top-1 -right-1 bg-green-500 text-white px-1.5 py-0.5 rounded-full text-xs font-bold shadow-sm">
+                        +18
+                      </div>
+                    </div>
+
+                    {/* Starting Score Text */}
+                    <div className="text-sm font-medium text-gray-600 mt-2">
+                      Starting Score: 590
+                    </div>
+                  </div>
+                </div>
+
+                {/* Experian - Circular Gauge */}
+                <div className="space-y-3">
+                  <div className="flex items-start justify-center h-10 mb-2 -mt-1">
+                    <img src={experianLogo} alt="Experian" className="h-9 object-contain" />
+                  </div>
+
+                  {/* Score Gauge with PNG */}
+                  <div className="flex flex-col items-center">
+                    <div className="relative w-48 h-24 mb-3">
+                      <img
+                        src={scoreGaugeArc}
+                        alt="Score Gauge"
+                        className="w-full h-full object-contain"
+                      />
+
+                      {/* Very Good text - positioned above score but under arc */}
+                      <div
+                        className="absolute inset-0 flex flex-col items-center justify-center"
+                        style={{ marginBottom: '20px' }}
+                      >
+                        <div className="text-xs font-semibold text-gray-500">Very Good</div>
+                      </div>
+
+                      {/* Score in center */}
+                      <div
+                        className="absolute inset-0 flex flex-col items-center justify-end"
+                        style={{ marginBottom: '-5px' }}
+                      >
+                        <div className="text-5xl font-black text-gray-700">756</div>
+                      </div>
+
+                      {/* Score Change Badge - Top Right */}
+                      <div className="absolute -top-1 -right-1 bg-green-500 text-white px-1.5 py-0.5 rounded-full text-xs font-bold shadow-sm">
+                        +15
+                      </div>
+                    </div>
+
+                    {/* Starting Score Text */}
+                    <div className="text-sm font-medium text-gray-600 mt-2">
+                      Starting Score: 590
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </Card>
           </div>
-
-          {/* Completion Center */}
-          <div className="mb-12 mt-12">
-            <CompletionCenter 
-              onContinueToWizard={handleContinueToWizard}
-              onShowDisputeItems={handleShowDisputeItems}
-            />
-          </div>
-
-
         </div>
 
+        {/* Credit Summary Section */}
+        <div className="mb-4">
+          <Card
+            className={`${showCreditSummary ? 'border-2 border-gray-300' : 'border border-gray-200'} transition-all duration-300 hover:shadow-lg`}
+          >
+            <CardHeader
+              className="cursor-pointer hover:bg-gray-50"
+              onClick={() => setShowCreditSummary(!showCreditSummary)}
+            >
+              <div className="flex justify-between items-center w-full">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-full bg-blue-500 flex items-center justify-center text-white text-sm font-bold">
+                    CS
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-bold">Credit Summary</h3>
+                    <p className="text-sm text-gray-600">
+                      Summary of credit accounts, balances, and score impact
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-1">
+                  <span className="text-sm text-gray-600">3 Bureaus</span>
+                  {showCreditSummary ? <ChevronUp /> : <ChevronDown />}
+                </div>
+              </div>
+            </CardHeader>
+            {showCreditSummary && (
+              <CardContent>
+                <CreditSummary creditData={creditData} />
+              </CardContent>
+            )}
+          </Card>
+        </div>
 
+        {/* Personal Information Section */}
+        <div className="mb-4 overflow-visible">
+          <PersonalInfo
+            borrower={creditData?.CREDIT_RESPONSE?.BORROWER || {}}
+            reportInfo={creditData?.CREDIT_RESPONSE || {}}
+          />
+        </div>
 
-        </Container>
+        {/* Hard Inquiries Section */}
+        <div className="mb-4" ref={hardInquiriesRef}>
+          {hardCollapsed ? (
+            <Card className="border-2 border-green-300 bg-green-50 transition-all duration-300">
+              <CardContent
+                className="p-6 cursor-pointer hover:bg-green-100"
+                onClick={() => {
+                  setHardCollapsed(false);
+                  console.log('↩️ HARD INQUIRIES EXPANDED');
+                }}
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-full bg-green-600 flex items-center justify-center text-white text-sm">
+                    ✓
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-bold text-green-800">Hard Inquiries Complete</h3>
+                    <p className="text-sm text-green-700">
+                      You've saved disputes for{' '}
+                      {Object.values(savedInquiries).filter((x) => x.isRecent).length} recent
+                      inquiry(ies) across TransUnion, Equifax, and Experian
+                    </p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          ) : (
+            <Card
+              className={`${showHardInquiries ? 'border-2 border-gray-300' : 'border border-gray-200'} transition-all duration-300 hover:shadow-lg`}
+            >
+              <CardHeader
+                className="cursor-pointer hover:bg-gray-50"
+                onClick={() => setShowHardInquiries(!showHardInquiries)}
+              >
+                <div className="flex justify-between items-center w-full">
+                  <div className="flex items-center gap-2">
+                    <div className="w-8 h-8 rounded-full gauge-orange flex items-center justify-center text-white text-sm font-bold">
+                      {recentInquiriesCount}
+                    </div>
+                    <div>
+                      <h3 className="text-lg font-bold">Hard Inquiries</h3>
+                      <p className="text-sm text-gray-600">
+                        Inquiries older than 24 months do not impact the score
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <span className="text-sm text-gray-600">{totalInquiriesCount} items</span>
+                    {showHardInquiries ? <ChevronUp /> : <ChevronDown />}
+                  </div>
+                </div>
+              </CardHeader>
+              {showHardInquiries && (
+                <CardContent>
+                  <Inquiries
+                    creditData={creditData}
+                    onDisputeSaved={handleDisputeSaved}
+                    onDisputeReset={handleDisputeReset}
+                    onHeaderReset={() => {}}
+                    savedDisputes={savedDisputes}
+                    onInquirySaved={handleInquirySaved}
+                    onInquiryReset={handleInquiryReset}
+                  />
+                </CardContent>
+              )}
+            </Card>
+          )}
+        </div>
+
+        {/* Positive & Closed Accounts Section */}
+        <div className="mb-4">
+          <Card
+            className={`${showPositiveAccounts ? 'border-2 border-gray-300' : 'border border-gray-200'} transition-all duration-300 hover:shadow-lg`}
+          >
+            <CardHeader
+              className="cursor-pointer hover:bg-gray-50"
+              onClick={() => setShowPositiveAccounts(!showPositiveAccounts)}
+            >
+              <div className="flex justify-between items-center w-full">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-full gauge-green flex items-center justify-center text-white text-sm font-bold">
+                    {positiveAccounts.length}
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-bold">Positive & Closed Accounts</h3>
+                    <p className="text-sm text-gray-600">
+                      Accounts in good standing helping your credit score
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-1">
+                  <span className="text-sm text-gray-600">{positiveAccounts.length} accounts</span>
+                  {showPositiveAccounts ? <ChevronUp /> : <ChevronDown />}
+                </div>
+              </div>
+            </CardHeader>
+            {showPositiveAccounts && (
+              <CardContent className="pt-2">
+                <div className="space-y-6">
+                  <div className="flex justify-end items-center mb-0">
+                    <div className="flex gap-2">
+                      <button
+                        className="px-3 py-1 text-sm border border-gray-300 rounded hover:bg-gray-50"
+                        onClick={() => setExpandAll(!expandAll)}
+                      >
+                        {expandAll ? 'Collapse All' : 'Expand All'}
+                      </button>
+                      <button
+                        className="px-3 py-1 text-sm border border-gray-300 rounded hover:bg-gray-50"
+                        onClick={() => setShowAllDetails(!showAllDetails)}
+                      >
+                        {showAllDetails ? 'Hide Details' : 'Show All Details'}
+                      </button>
+                    </div>
+                  </div>
+                  <div className="flex flex-col gap-3">
+                    {positiveAccounts.map((account: any, index: number) => {
+                      console.log(`📋 Rendering Positive Account: ${account['@CreditLiabilityID']} with unified structure`);
+                      return (
+                        <AccountRow
+                          key={`positive-${account['@CreditLiabilityID'] || account['@_AccountNumber'] || account['@_AccountIdentifier'] || index}`}
+                          account={account}
+                          aiViolations={aiViolations[account['@CreditLiabilityID']] || []}
+                          disputeReasons={disputeReasons}
+                          disputeInstructions={disputeInstructions}
+                          onDisputeSaved={handleDisputeSaved}
+                          onDisputeReset={handleDisputeReset}
+                          expandAll={expandAll}
+                          showAllDetails={showAllDetails}
+                          aiScanCompleted={aiScanCompleted}
+                          savedDisputes={savedDisputes}
+                          isFirstInConnectedSection={false}
+                          allNegativeAccountsSaved={false}
+                        />
+                      );
+                    })}
+                  </div>
+                </div>
+              </CardContent>
+            )}
+          </Card>
+        </div>
+
+        {/* Negative Accounts Section */}
+        <div className="mb-4 overflow-visible" ref={negativeAccountsRef}>
+          {negativeAccountsCollapsed ? (
+            // Collapsed Success View
+            <div className="ring-4 ring-red-500 bg-white p-4 rounded-xl">
+              <Card className="border-2 border-green-500 bg-green-50 transition-all duration-300 hover:shadow-lg">
+                <CardHeader
+                  className="cursor-pointer hover:bg-green-100"
+                  onClick={() => {
+                    setNegativeAccountsCollapsed(false);
+                    setShowNegativeAccounts(true);
+                    setUserHasManuallyExpanded(true);
+                  }}
+                >
+                  <div className="flex justify-between items-center w-full">
+                    <div className="flex items-center gap-2">
+                      <div className="w-8 h-8 rounded-full bg-green-600 flex items-center justify-center">
+                        <svg className="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 20 20">
+                          <path
+                            fillRule="evenodd"
+                            d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
+                            clipRule="evenodd"
+                          />
+                        </svg>
+                      </div>
+                      <div>
+                        <h3 className="text-lg font-bold text-green-800">
+                          Negative Accounts – Disputes Saved
+                        </h3>
+                        <p className="text-sm text-green-600">
+                          {(() => {
+                            const accounts = creditData?.CREDIT_RESPONSE?.CREDIT_LIABILITY || [];
+                            const negativeAccountsData = accounts.filter((account: any) => {
+                              return (
+                                account['@_DerogatoryDataIndicator'] === 'Y' ||
+                                account['@IsCollectionIndicator'] === 'Y' ||
+                                account['@IsChargeoffIndicator'] === 'Y' ||
+                                (account['@_PastDueAmount'] &&
+                                  parseInt(account['@_PastDueAmount']) > 0) ||
+                                (account._CURRENT_RATING &&
+                                  ['7', '8', '9'].includes(account._CURRENT_RATING['@_Code'])) ||
+                                (account['@_ChargeOffDate'] && account['@_ChargeOffDate'] !== '')
+                              );
+                            });
+                            const accountCount = negativeAccountsData.length;
+                            return `You've saved disputes for ${accountCount} negative accounts across TransUnion, Equifax, and Experian.`;
+                          })()}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <span className="text-sm text-green-600">
+                        {(() => {
+                          const accounts = creditData?.CREDIT_RESPONSE?.CREDIT_LIABILITY || [];
+                          const negativeAccountsData = accounts.filter((account: any) => {
+                            return (
+                              account['@_DerogatoryDataIndicator'] === 'Y' ||
+                              account['@IsCollectionIndicator'] === 'Y' ||
+                              account['@IsChargeoffIndicator'] === 'Y' ||
+                              (account['@_PastDueAmount'] &&
+                                parseInt(account['@_PastDueAmount']) > 0) ||
+                              (account._CURRENT_RATING &&
+                                ['7', '8', '9'].includes(account._CURRENT_RATING['@_Code'])) ||
+                              (account['@_ChargeOffDate'] && account['@_ChargeOffDate'] !== '')
+                            );
+                          });
+                          return `${negativeAccountsData.length} Accounts`;
+                        })()}
+                      </span>
+                      <ChevronDown className="text-green-600" />
+                    </div>
+                  </div>
+                </CardHeader>
+              </Card>
+            </div>
+          ) : (
+            // Normal Expanded View
+            <Card
+              className={`${showNegativeAccounts ? 'border-2 border-gray-300' : 'border border-gray-200'} transition-all duration-300 hover:shadow-lg`}
+            >
+              <CardHeader
+                className="cursor-pointer hover:bg-gray-50"
+                onClick={() => setShowNegativeAccounts(!showNegativeAccounts)}
+              >
+                <div className="flex justify-between items-center w-full">
+                  <div className="flex items-center gap-2">
+                    <div className="w-8 h-8 rounded-full gauge-red flex items-center justify-center text-white text-sm font-bold">
+                      {negativeAccounts.length}
+                    </div>
+                    <div>
+                      <h3 className="text-lg font-bold">Negative Accounts</h3>
+                      <p className="text-sm text-gray-600">
+                        Accounts that may be negatively impacting your credit score
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <span className="text-sm text-gray-600">
+                      {negativeAccounts.length} accounts
+                    </span>
+                    {showNegativeAccounts ? <ChevronUp /> : <ChevronDown />}
+                  </div>
+                </div>
+              </CardHeader>
+              {showNegativeAccounts && (
+                <CardContent className="pt-3">
+                  <div className="space-y-6">
+                    <div className="flex justify-between items-center mb-1">
+                      <p className="text-sm text-gray-600 font-bold">
+                        Complete steps 1-2-3 for each account below to dispute negative items
+                      </p>
+                      <div className="flex gap-2">
+                        <button
+                          className="px-3 py-1 text-sm border border-gray-300 rounded hover:bg-gray-50"
+                          onClick={() => setShowAllDetails(!showAllDetails)}
+                        >
+                          {showAllDetails ? 'Hide Details' : 'Show All Details'}
+                        </button>
+                      </div>
+                    </div>
+                    <div className="flex flex-col gap-6">
+                      {negativeAccounts.map((account: any, index: number) => {
+                        console.log(`📋 Rendering Negative Account: ${account['@CreditLiabilityID']} with unified structure`);
+                        return (
+                          <AccountRow
+                            key={`negative-${account['@CreditLiabilityID'] || account['@_AccountNumber'] || account['@_AccountIdentifier'] || index}`}
+                            account={account}
+                            aiViolations={aiViolations[account['@CreditLiabilityID']] || []}
+                            disputeReasons={disputeReasons}
+                            disputeInstructions={disputeInstructions}
+                            onDisputeSaved={handleDisputeSaved}
+                            onDisputeReset={handleDisputeReset}
+                            onHeaderReset={() => {}}
+                            expandAll={expandAll}
+                            showAllDetails={showAllDetails}
+                            aiScanCompleted={aiScanCompleted}
+                            savedDisputes={savedDisputes}
+                            isFirstInConnectedSection={index === 0}
+                            allNegativeAccountsSaved={negativeAccounts.every(
+                              (acc: any) =>
+                                savedDisputes[
+                                  acc['@CreditLiabilityID'] ||
+                                    acc['@_AccountNumber'] ||
+                                    acc['@_AccountIdentifier']
+                                ]
+                            )}
+                          />
+                        );
+                      })}
+                    </div>
+                  </div>
+                </CardContent>
+              )}
+            </Card>
+          )}
+        </div>
+
+        {/* Public Records Section */}
+        {hasPublicRecords && (
+          <div className="mb-4">
+            <Card
+              className={`${showPublicRecords ? 'border-2 border-gray-300' : 'border border-gray-200'} transition-all duration-300 hover:shadow-lg`}
+            >
+              <CardHeader
+                className="cursor-pointer hover:bg-gray-50"
+                onClick={() => setShowPublicRecords(!showPublicRecords)}
+              >
+                <div className="flex justify-between items-center w-full">
+                  <div className="flex items-center gap-2">
+                    <div className="w-8 h-8 rounded-full gauge-red flex items-center justify-center text-white text-sm font-bold">
+                      {publicRecords.length}
+                    </div>
+                    <div>
+                      <h3 className="text-lg font-bold">Public Records</h3>
+                      <p className="text-sm text-gray-600">
+                        Court records, liens, and judgments on your credit report
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <span className="text-sm text-gray-600">{publicRecords.length} records</span>
+                    {showPublicRecords ? <ChevronUp /> : <ChevronDown />}
+                  </div>
+                </div>
+              </CardHeader>
+              {showPublicRecords && (
+                <CardContent className="pt-6">
+                  <div className="space-y-6">
+                    <div className="flex flex-col gap-6">
+                      {publicRecords.map((record: any, index: number) => {
+                        console.log(`📋 Rendering Public Record: ${record.id || record['@CreditLiabilityID']} with unified structure`);
+                        return (
+                          <PublicRecordRow
+                            key={`public-record-${record['@CreditLiabilityID'] || record['@_SubscriberCode'] || index}`}
+                            record={record}
+                            onDispute={() => {}}
+                            onDisputeSaved={handleDisputeSaved}
+                            onDisputeReset={handleDisputeReset}
+                            onHeaderReset={() => {}}
+                            expandAll={expandAll}
+                          />
+                        );
+                      })}
+                    </div>
+                  </div>
+                </CardContent>
+              )}
+            </Card>
+          </div>
+        )}
+
+        {/* Completion Center */}
+        <div className="mb-12 mt-12">
+          <CompletionCenter
+            onContinueToWizard={handleContinueToWizard}
+            onShowDisputeItems={handleShowDisputeItems}
+          />
+        </div>
 
         <DisputeModal
           isOpen={isDisputeModalOpen}
@@ -1727,6 +1063,7 @@ export default function CreditReportPage() {
           accounts={accounts}
           selectedAccount={selectedAccount}
         />
-      </Box>
-    );
+      </div>
+    </div>
+  );
 }
